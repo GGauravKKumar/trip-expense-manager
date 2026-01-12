@@ -9,8 +9,9 @@ import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
 import { Expense, ExpenseStatus } from '@/types/database';
 import { useAuth } from '@/hooks/useAuth';
-import { Check, X, Eye, Loader2, FileText } from 'lucide-react';
+import { Check, X, Eye, Loader2, FileText, Download } from 'lucide-react';
 import { toast } from 'sonner';
+import { exportToExcel, formatCurrency, formatDate } from '@/lib/exportUtils';
 
 export default function ExpenseApproval() {
   const { user } = useAuth();
@@ -143,6 +144,24 @@ export default function ExpenseApproval() {
     return <Badge variant={variants[status]}>{status}</Badge>;
   };
 
+  function handleExportExpenses() {
+    if (expenses.length === 0) return;
+
+    exportToExcel(
+      expenses,
+      [
+        { header: 'Trip #', key: 'trip', format: (v) => v?.trip_number || '-' },
+        { header: 'Driver', key: 'submitter', format: (v) => v?.full_name || '-' },
+        { header: 'Category', key: 'category', format: (v) => v?.name || '-' },
+        { header: 'Amount', key: 'amount', format: (v) => Number(v) },
+        { header: 'Date', key: 'expense_date', format: formatDate },
+        { header: 'Status', key: 'status' },
+        { header: 'Admin Remarks', key: 'admin_remarks', format: (v) => v || '-' },
+      ],
+      `expenses-${filter}-report`
+    );
+  }
+
   return (
     <DashboardLayout>
       <div className="space-y-6">
@@ -151,7 +170,7 @@ export default function ExpenseApproval() {
             <h1 className="text-2xl font-bold">Expense Approval</h1>
             <p className="text-muted-foreground">Review and approve driver expenses</p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
             {(['all', 'pending', 'approved', 'denied'] as const).map((status) => (
               <Button
                 key={status}
@@ -162,6 +181,10 @@ export default function ExpenseApproval() {
                 {status.charAt(0).toUpperCase() + status.slice(1)}
               </Button>
             ))}
+            <Button variant="outline" size="sm" onClick={handleExportExpenses} disabled={expenses.length === 0}>
+              <Download className="h-4 w-4 mr-2" />
+              Export
+            </Button>
           </div>
         </div>
 
