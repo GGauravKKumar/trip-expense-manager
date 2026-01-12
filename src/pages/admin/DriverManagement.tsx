@@ -2,15 +2,19 @@ import { useEffect, useState } from 'react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { supabase } from '@/integrations/supabase/client';
 import { Profile, AppRole } from '@/types/database';
-import { UserPlus, Loader2 } from 'lucide-react';
+import { UserPlus, Loader2, Pencil, Download } from 'lucide-react';
 import { toast } from 'sonner';
+import { exportToExcel, formatDate } from '@/lib/exportUtils';
 
 interface DriverWithRole extends Profile {
   role?: AppRole;
@@ -20,10 +24,24 @@ export default function DriverManagement() {
   const [drivers, setDrivers] = useState<DriverWithRole[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editingDriver, setEditingDriver] = useState<DriverWithRole | null>(null);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [selectedProfile, setSelectedProfile] = useState('');
   const [selectedRole, setSelectedRole] = useState<AppRole>('driver');
   const [submitting, setSubmitting] = useState(false);
+  const [dialogTab, setDialogTab] = useState<'create' | 'assign'>('create');
+
+  // New driver form
+  const [newDriver, setNewDriver] = useState({
+    email: '',
+    password: '',
+    full_name: '',
+    phone: '',
+    license_number: '',
+    license_expiry: '',
+    address: '',
+  });
 
   useEffect(() => {
     fetchDrivers();
@@ -31,7 +49,6 @@ export default function DriverManagement() {
   }, []);
 
   async function fetchDrivers() {
-    // Get all user roles
     const { data: roles, error: rolesError } = await supabase
       .from('user_roles')
       .select('user_id, role');
@@ -41,7 +58,6 @@ export default function DriverManagement() {
       return;
     }
 
-    // Get all profiles
     const { data: profilesData, error: profilesError } = await supabase
       .from('profiles')
       .select('*')
@@ -52,7 +68,6 @@ export default function DriverManagement() {
       return;
     }
 
-    // Combine profiles with roles
     const driversWithRoles = profilesData.map((profile) => {
       const userRole = roles?.find((r) => r.user_id === profile.user_id);
       return {
@@ -76,6 +91,58 @@ export default function DriverManagement() {
     }
   }
 
+  async function handleCreateDriver(e: React.FormEvent) {
+    e.preventDefault();
+    
+    if (!newDriver.email || !newDriver.password || !newDriver.full_name) {
+      toast.error('Email, password, and full name are required');
+      return;
+    }
+
+    if (newDriver.password.length < 6) {
+      toast.error('Password must be at least 6 characters');
+      return;
+    }
+
+    setSubmitting(true);
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      const response = await supabase.functions.invoke('create-driver', {
+        body: newDriver,
+        headers: {
+          Authorization: `Bearer ${session?.access_token}`,
+        },
+      });
+
+      if (response.error) {
+        toast.error(response.error.message || 'Failed to create driver');
+      } else if (response.data?.error) {
+        toast.error(response.data.error);
+      } else {
+        toast.success('Driver created successfully');
+        setDialogOpen(false);
+        setNewDriver({
+          email: '',
+          password: '',
+          full_name: '',
+          phone: '',
+          license_number: '',
+          license_expiry: '',
+          address: '',
+        });
+        fetchDrivers();
+        fetchProfiles();
+      }
+    } catch (error) {
+      console.error('Error creating driver:', error);
+      toast.error('Failed to create driver');
+    }
+
+    setSubmitting(false);
+  }
+
   async function handleAssignRole(e: React.FormEvent) {
     e.preventDefault();
     if (!selectedProfile) return;
@@ -89,7 +156,6 @@ export default function DriverManagement() {
       return;
     }
 
-    // Check if role already exists
     const { data: existingRole } = await supabase
       .from('user_roles')
       .select('*')
@@ -97,7 +163,6 @@ export default function DriverManagement() {
       .maybeSingle();
 
     if (existingRole) {
-      // Update existing role
       const { error } = await supabase
         .from('user_roles')
         .update({ role: selectedRole })
@@ -111,7 +176,6 @@ export default function DriverManagement() {
         fetchDrivers();
       }
     } else {
-      // Insert new role
       const { error } = await supabase
         .from('user_roles')
         .insert({ user_id: profile.user_id, role: selectedRole });
@@ -126,6 +190,57 @@ export default function DriverManagement() {
     }
 
     setSubmitting(false);
+  }
+
+  function handleEditDriver(driver: DriverWithRole) {
+    setEditingDriver(driver);
+    setEditDialogOpen(true);
+  }
+
+  async function handleUpdateDriver(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editingDriver) return;
+
+    setSubmitting(true);
+
+    const { error } = await supabase
+      .from('profiles')
+      .update({
+        full_name: editingDriver.full_name,
+        phone: editingDriver.phone || null,
+        license_number: editingDriver.license_number || null,
+        license_expiry: editingDriver.license_expiry || null,
+        address: editingDriver.address || null,
+      })
+      .eq('id', editingDriver.id);
+
+    if (error) {
+      toast.error('Failed to update driver');
+    } else {
+      toast.success('Driver updated successfully');
+      setEditDialogOpen(false);
+      fetchDrivers();
+    }
+
+    setSubmitting(false);
+  }
+
+  function handleExportDrivers() {
+    if (drivers.length === 0) return;
+
+    exportToExcel(
+      drivers,
+      [
+        { header: 'Name', key: 'full_name' },
+        { header: 'Phone', key: 'phone', format: (v) => v || '-' },
+        { header: 'License Number', key: 'license_number', format: (v) => v || '-' },
+        { header: 'License Expiry', key: 'license_expiry', format: formatDate },
+        { header: 'Address', key: 'address', format: (v) => v || '-' },
+        { header: 'Role', key: 'role', format: (v) => v || 'No Role' },
+        { header: 'Joined', key: 'created_at', format: formatDate },
+      ],
+      'drivers-report'
+    );
   }
 
   const getRoleBadge = (role?: AppRole) => {
@@ -143,59 +258,162 @@ export default function DriverManagement() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold">Driver Management</h1>
-            <p className="text-muted-foreground">Manage drivers and assign roles</p>
+            <p className="text-muted-foreground">Create and manage drivers</p>
           </div>
-          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-            <DialogTrigger asChild>
-              <Button>
-                <UserPlus className="h-4 w-4 mr-2" />
-                Assign Role
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Assign Role to User</DialogTitle>
-              </DialogHeader>
-              <form onSubmit={handleAssignRole} className="space-y-4">
-                <div className="space-y-2">
-                  <Label>Select User</Label>
-                  <Select value={selectedProfile} onValueChange={setSelectedProfile}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Choose a user" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {profiles.map((profile) => (
-                        <SelectItem key={profile.id} value={profile.id}>
-                          {profile.full_name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Role</Label>
-                  <Select value={selectedRole} onValueChange={(v) => setSelectedRole(v as AppRole)}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="driver">Driver</SelectItem>
-                      <SelectItem value="admin">Admin</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="flex justify-end gap-2">
-                  <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
-                    Cancel
-                  </Button>
-                  <Button type="submit" disabled={submitting || !selectedProfile}>
-                    {submitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                    Assign Role
-                  </Button>
-                </div>
-              </form>
-            </DialogContent>
-          </Dialog>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={handleExportDrivers} disabled={drivers.length === 0}>
+              <Download className="h-4 w-4 mr-2" />
+              Export
+            </Button>
+            <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+              <DialogTrigger asChild>
+                <Button>
+                  <UserPlus className="h-4 w-4 mr-2" />
+                  Add Driver
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-lg">
+                <DialogHeader>
+                  <DialogTitle>Add Driver</DialogTitle>
+                </DialogHeader>
+                <Tabs value={dialogTab} onValueChange={(v) => setDialogTab(v as 'create' | 'assign')}>
+                  <TabsList className="grid w-full grid-cols-2">
+                    <TabsTrigger value="create">Create New</TabsTrigger>
+                    <TabsTrigger value="assign">Assign Role</TabsTrigger>
+                  </TabsList>
+
+                  <TabsContent value="create" className="space-y-4 mt-4">
+                    <form onSubmit={handleCreateDriver} className="space-y-4">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="email">Email *</Label>
+                          <Input
+                            id="email"
+                            type="email"
+                            value={newDriver.email}
+                            onChange={(e) => setNewDriver({ ...newDriver, email: e.target.value })}
+                            placeholder="driver@example.com"
+                            required
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="password">Password *</Label>
+                          <Input
+                            id="password"
+                            type="password"
+                            value={newDriver.password}
+                            onChange={(e) => setNewDriver({ ...newDriver, password: e.target.value })}
+                            placeholder="Min 6 characters"
+                            required
+                            minLength={6}
+                          />
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="full_name">Full Name *</Label>
+                        <Input
+                          id="full_name"
+                          value={newDriver.full_name}
+                          onChange={(e) => setNewDriver({ ...newDriver, full_name: e.target.value })}
+                          placeholder="John Doe"
+                          required
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="phone">Phone</Label>
+                        <Input
+                          id="phone"
+                          type="tel"
+                          value={newDriver.phone}
+                          onChange={(e) => setNewDriver({ ...newDriver, phone: e.target.value })}
+                          placeholder="+91 98765 43210"
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="license_number">License Number</Label>
+                          <Input
+                            id="license_number"
+                            value={newDriver.license_number}
+                            onChange={(e) => setNewDriver({ ...newDriver, license_number: e.target.value })}
+                            placeholder="MH01 2020 0012345"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="license_expiry">License Expiry</Label>
+                          <Input
+                            id="license_expiry"
+                            type="date"
+                            value={newDriver.license_expiry}
+                            onChange={(e) => setNewDriver({ ...newDriver, license_expiry: e.target.value })}
+                          />
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="address">Address</Label>
+                        <Textarea
+                          id="address"
+                          value={newDriver.address}
+                          onChange={(e) => setNewDriver({ ...newDriver, address: e.target.value })}
+                          placeholder="Full address"
+                        />
+                      </div>
+                      <div className="flex justify-end gap-2">
+                        <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
+                          Cancel
+                        </Button>
+                        <Button type="submit" disabled={submitting}>
+                          {submitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                          Create Driver
+                        </Button>
+                      </div>
+                    </form>
+                  </TabsContent>
+
+                  <TabsContent value="assign" className="space-y-4 mt-4">
+                    <form onSubmit={handleAssignRole} className="space-y-4">
+                      <div className="space-y-2">
+                        <Label>Select User</Label>
+                        <Select value={selectedProfile} onValueChange={setSelectedProfile}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Choose a user" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {profiles.map((profile) => (
+                              <SelectItem key={profile.id} value={profile.id}>
+                                {profile.full_name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Role</Label>
+                        <Select value={selectedRole} onValueChange={(v) => setSelectedRole(v as AppRole)}>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="driver">Driver</SelectItem>
+                            <SelectItem value="admin">Admin</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="flex justify-end gap-2">
+                        <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
+                          Cancel
+                        </Button>
+                        <Button type="submit" disabled={submitting || !selectedProfile}>
+                          {submitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                          Assign Role
+                        </Button>
+                      </div>
+                    </form>
+                  </TabsContent>
+                </Tabs>
+              </DialogContent>
+            </Dialog>
+          </div>
         </div>
 
         <Card>
@@ -209,18 +427,19 @@ export default function DriverManagement() {
                   <TableHead>License Expiry</TableHead>
                   <TableHead>Role</TableHead>
                   <TableHead>Joined</TableHead>
+                  <TableHead className="w-[50px]"></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center py-8">
+                    <TableCell colSpan={7} className="text-center py-8">
                       <Loader2 className="h-6 w-6 animate-spin mx-auto" />
                     </TableCell>
                   </TableRow>
                 ) : drivers.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
                       No users registered yet
                     </TableCell>
                   </TableRow>
@@ -235,6 +454,11 @@ export default function DriverManagement() {
                       <TableCell>
                         {new Date(driver.created_at).toLocaleDateString('en-IN')}
                       </TableCell>
+                      <TableCell>
+                        <Button variant="ghost" size="icon" onClick={() => handleEditDriver(driver)}>
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
                     </TableRow>
                   ))
                 )}
@@ -242,6 +466,73 @@ export default function DriverManagement() {
             </Table>
           </CardContent>
         </Card>
+
+        {/* Edit Driver Dialog */}
+        <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Edit Driver</DialogTitle>
+            </DialogHeader>
+            {editingDriver && (
+              <form onSubmit={handleUpdateDriver} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="edit_full_name">Full Name *</Label>
+                  <Input
+                    id="edit_full_name"
+                    value={editingDriver.full_name}
+                    onChange={(e) => setEditingDriver({ ...editingDriver, full_name: e.target.value })}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit_phone">Phone</Label>
+                  <Input
+                    id="edit_phone"
+                    type="tel"
+                    value={editingDriver.phone || ''}
+                    onChange={(e) => setEditingDriver({ ...editingDriver, phone: e.target.value })}
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="edit_license_number">License Number</Label>
+                    <Input
+                      id="edit_license_number"
+                      value={editingDriver.license_number || ''}
+                      onChange={(e) => setEditingDriver({ ...editingDriver, license_number: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit_license_expiry">License Expiry</Label>
+                    <Input
+                      id="edit_license_expiry"
+                      type="date"
+                      value={editingDriver.license_expiry || ''}
+                      onChange={(e) => setEditingDriver({ ...editingDriver, license_expiry: e.target.value })}
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit_address">Address</Label>
+                  <Textarea
+                    id="edit_address"
+                    value={editingDriver.address || ''}
+                    onChange={(e) => setEditingDriver({ ...editingDriver, address: e.target.value })}
+                  />
+                </div>
+                <div className="flex justify-end gap-2">
+                  <Button type="button" variant="outline" onClick={() => setEditDialogOpen(false)}>
+                    Cancel
+                  </Button>
+                  <Button type="submit" disabled={submitting}>
+                    {submitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                    Update Driver
+                  </Button>
+                </div>
+              </form>
+            )}
+          </DialogContent>
+        </Dialog>
       </div>
     </DashboardLayout>
   );
