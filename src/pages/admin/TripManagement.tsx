@@ -11,8 +11,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
 import { Trip, TripStatus, Bus, Profile, Route } from '@/types/database';
-import { Plus, Pencil, Loader2 } from 'lucide-react';
+import { Plus, Pencil, Loader2, Download, Eye } from 'lucide-react';
 import { toast } from 'sonner';
+import { exportToExcel, formatCurrency, formatDate } from '@/lib/exportUtils';
+import TripExpensesDialog from '@/components/TripExpensesDialog';
 
 export default function TripManagement() {
   const [trips, setTrips] = useState<Trip[]>([]);
@@ -33,6 +35,32 @@ export default function TripManagement() {
     notes: '',
   });
   const [submitting, setSubmitting] = useState(false);
+  const [expenseDialogOpen, setExpenseDialogOpen] = useState(false);
+  const [selectedTrip, setSelectedTrip] = useState<Trip | null>(null);
+
+  function handleViewExpenses(trip: Trip) {
+    setSelectedTrip(trip);
+    setExpenseDialogOpen(true);
+  }
+
+  function handleExportTrips() {
+    if (trips.length === 0) return;
+
+    exportToExcel(
+      trips,
+      [
+        { header: 'Trip #', key: 'trip_number' },
+        { header: 'Bus', key: 'bus', format: (v) => v?.registration_number || '-' },
+        { header: 'Driver', key: 'driver', format: (v) => v?.full_name || '-' },
+        { header: 'Route', key: 'route', format: (v) => v?.route_name || '-' },
+        { header: 'Start Date', key: 'start_date', format: formatDate },
+        { header: 'End Date', key: 'end_date', format: formatDate },
+        { header: 'Status', key: 'status' },
+        { header: 'Total Expense', key: 'total_expense', format: (v) => Number(v) || 0 },
+      ],
+      'trips-report'
+    );
+  }
 
   useEffect(() => {
     fetchTrips();
@@ -183,13 +211,18 @@ export default function TripManagement() {
             <h1 className="text-2xl font-bold">Trip Management</h1>
             <p className="text-muted-foreground">Schedule and manage trips</p>
           </div>
-          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-            <DialogTrigger asChild>
-              <Button onClick={handleAddNew}>
-                <Plus className="h-4 w-4 mr-2" />
-                Create Trip
-              </Button>
-            </DialogTrigger>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={handleExportTrips} disabled={trips.length === 0}>
+              <Download className="h-4 w-4 mr-2" />
+              Export
+            </Button>
+            <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+              <DialogTrigger asChild>
+                <Button onClick={handleAddNew}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Create Trip
+                </Button>
+              </DialogTrigger>
             <DialogContent className="max-w-lg">
               <DialogHeader>
                 <DialogTitle>{editingTrip ? 'Edit Trip' : 'Create New Trip'}</DialogTitle>
@@ -320,6 +353,7 @@ export default function TripManagement() {
               </form>
             </DialogContent>
           </Dialog>
+          </div>
         </div>
 
         <Card>
@@ -334,7 +368,7 @@ export default function TripManagement() {
                   <TableHead>Start Date</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Total Expense</TableHead>
-                  <TableHead className="w-[50px]"></TableHead>
+                  <TableHead className="w-[100px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -365,11 +399,16 @@ export default function TripManagement() {
                         })}
                       </TableCell>
                       <TableCell>{getStatusBadge(trip.status)}</TableCell>
-                      <TableCell>₹{Number(trip.total_expense).toLocaleString('en-IN')}</TableCell>
+                      <TableCell>{formatCurrency(Number(trip.total_expense))}</TableCell>
                       <TableCell>
-                        <Button variant="ghost" size="icon" onClick={() => handleEdit(trip)}>
-                          <Pencil className="h-4 w-4" />
-                        </Button>
+                        <div className="flex gap-1">
+                          <Button variant="ghost" size="icon" onClick={() => handleViewExpenses(trip)} title="View Expenses">
+                            <Eye className="h-4 w-4" />
+                          </Button>
+                          <Button variant="ghost" size="icon" onClick={() => handleEdit(trip)} title="Edit">
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))
@@ -378,6 +417,15 @@ export default function TripManagement() {
             </Table>
           </CardContent>
         </Card>
+
+        {selectedTrip && (
+          <TripExpensesDialog
+            open={expenseDialogOpen}
+            onOpenChange={setExpenseDialogOpen}
+            tripId={selectedTrip.id}
+            tripNumber={selectedTrip.trip_number}
+          />
+        )}
       </div>
     </DashboardLayout>
   );

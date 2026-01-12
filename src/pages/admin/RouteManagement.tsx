@@ -9,8 +9,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { supabase } from '@/integrations/supabase/client';
 import { Route, IndianState } from '@/types/database';
-import { Plus, Pencil, Loader2 } from 'lucide-react';
+import { Plus, Pencil, Loader2, Receipt, Download } from 'lucide-react';
 import { toast } from 'sonner';
+import RouteExpensesDialog from '@/components/RouteExpensesDialog';
+import { exportToExcel } from '@/lib/exportUtils';
 
 export default function RouteManagement() {
   const [routes, setRoutes] = useState<Route[]>([]);
@@ -18,6 +20,8 @@ export default function RouteManagement() {
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingRoute, setEditingRoute] = useState<Route | null>(null);
+  const [expenseDialogOpen, setExpenseDialogOpen] = useState(false);
+  const [selectedRoute, setSelectedRoute] = useState<Route | null>(null);
   const [formData, setFormData] = useState({
     route_name: '',
     from_state_id: '',
@@ -28,6 +32,29 @@ export default function RouteManagement() {
     estimated_duration_hours: '',
   });
   const [submitting, setSubmitting] = useState(false);
+
+  function handleViewExpenses(route: Route) {
+    setSelectedRoute(route);
+    setExpenseDialogOpen(true);
+  }
+
+  function handleExportRoutes() {
+    if (routes.length === 0) return;
+
+    exportToExcel(
+      routes,
+      [
+        { header: 'Route Name', key: 'route_name' },
+        { header: 'From State', key: 'from_state', format: (v) => v?.state_name || '-' },
+        { header: 'From Address', key: 'from_address', format: (v) => v || '-' },
+        { header: 'To State', key: 'to_state', format: (v) => v?.state_name || '-' },
+        { header: 'To Address', key: 'to_address', format: (v) => v || '-' },
+        { header: 'Distance (km)', key: 'distance_km', format: (v) => v || '-' },
+        { header: 'Duration (hrs)', key: 'estimated_duration_hours', format: (v) => v || '-' },
+      ],
+      'routes-report'
+    );
+  }
 
   useEffect(() => {
     fetchRoutes();
@@ -144,13 +171,18 @@ export default function RouteManagement() {
             <h1 className="text-2xl font-bold">Route Management</h1>
             <p className="text-muted-foreground">Manage bus routes across India</p>
           </div>
-          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-            <DialogTrigger asChild>
-              <Button onClick={handleAddNew}>
-                <Plus className="h-4 w-4 mr-2" />
-                Add Route
-              </Button>
-            </DialogTrigger>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={handleExportRoutes} disabled={routes.length === 0}>
+              <Download className="h-4 w-4 mr-2" />
+              Export
+            </Button>
+            <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+              <DialogTrigger asChild>
+                <Button onClick={handleAddNew}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Route
+                </Button>
+              </DialogTrigger>
             <DialogContent className="max-w-lg">
               <DialogHeader>
                 <DialogTitle>{editingRoute ? 'Edit Route' : 'Add New Route'}</DialogTitle>
@@ -264,6 +296,7 @@ export default function RouteManagement() {
               </form>
             </DialogContent>
           </Dialog>
+          </div>
         </div>
 
         <Card>
@@ -276,7 +309,7 @@ export default function RouteManagement() {
                   <TableHead>To</TableHead>
                   <TableHead>Distance</TableHead>
                   <TableHead>Duration</TableHead>
-                  <TableHead className="w-[50px]"></TableHead>
+                  <TableHead className="w-[100px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -317,9 +350,14 @@ export default function RouteManagement() {
                         {route.estimated_duration_hours ? `${route.estimated_duration_hours} hrs` : '-'}
                       </TableCell>
                       <TableCell>
-                        <Button variant="ghost" size="icon" onClick={() => handleEdit(route)}>
-                          <Pencil className="h-4 w-4" />
-                        </Button>
+                        <div className="flex gap-1">
+                          <Button variant="ghost" size="icon" onClick={() => handleViewExpenses(route)} title="View Expenses">
+                            <Receipt className="h-4 w-4" />
+                          </Button>
+                          <Button variant="ghost" size="icon" onClick={() => handleEdit(route)} title="Edit">
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))
@@ -328,6 +366,15 @@ export default function RouteManagement() {
             </Table>
           </CardContent>
         </Card>
+
+        {selectedRoute && (
+          <RouteExpensesDialog
+            open={expenseDialogOpen}
+            onOpenChange={setExpenseDialogOpen}
+            routeId={selectedRoute.id}
+            routeName={selectedRoute.route_name}
+          />
+        )}
       </div>
     </DashboardLayout>
   );

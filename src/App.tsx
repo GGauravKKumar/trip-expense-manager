@@ -17,6 +17,7 @@ import ExpenseApproval from "@/pages/admin/ExpenseApproval";
 import DriverDashboard from "@/pages/driver/DriverDashboard";
 import DriverTrips from "@/pages/driver/DriverTrips";
 import DriverExpenses from "@/pages/driver/DriverExpenses";
+import DriverProfile from "@/pages/driver/DriverProfile";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -44,6 +45,7 @@ const App = () => (
             <Route path="/driver" element={<ProtectedRoute requiredRole="driver"><DriverDashboard /></ProtectedRoute>} />
             <Route path="/driver/trips" element={<ProtectedRoute requiredRole="driver"><DriverTrips /></ProtectedRoute>} />
             <Route path="/driver/expenses" element={<ProtectedRoute requiredRole="driver"><DriverExpenses /></ProtectedRoute>} />
+            <Route path="/driver/profile" element={<ProtectedRoute requiredRole="driver"><DriverProfile /></ProtectedRoute>} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>
