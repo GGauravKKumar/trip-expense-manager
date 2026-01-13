@@ -170,6 +170,14 @@ export function mapTripToSheetData(
     status: string;
     notes: string | null;
     total_expense: number | null;
+    odometer_start?: number | null;
+    odometer_end?: number | null;
+    distance_traveled?: number | null;
+    revenue_cash?: number | null;
+    revenue_online?: number | null;
+    revenue_paytm?: number | null;
+    revenue_others?: number | null;
+    total_revenue?: number | null;
     bus?: { registration_number: string; bus_name: string | null } | null;
     route?: { route_name: string; distance_km: number | null; from_address: string | null; to_address: string | null } | null;
     driver?: { full_name: string } | null;
@@ -199,6 +207,7 @@ export function mapTripToSheetData(
   }, { diesel: 0, driver: 0, route: 0, maintenance: 0, govtDuty: 0, others: 0 });
 
   const totalExpense = Object.values(expenseByCategory).reduce((a, b) => a + b, 0);
+  const totalRevenue = Number(trip.total_revenue) || 0;
 
   const startDate = new Date(trip.start_date);
   const endDate = trip.end_date ? new Date(trip.end_date) : null;
@@ -210,17 +219,17 @@ export function mapTripToSheetData(
     hoursReturned: endDate ? endDate.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }) : '',
     from: trip.route?.from_address || trip.route?.route_name?.split(' - ')[0] || '',
     to: trip.route?.to_address || trip.route?.route_name?.split(' - ')[1] || '',
-    odometerStart: 0, // Not tracked in current schema
-    odometerFinished: 0, // Not tracked in current schema
-    distanceKm: trip.route?.distance_km || 0,
+    odometerStart: Number(trip.odometer_start) || 0,
+    odometerFinished: Number(trip.odometer_end) || 0,
+    distanceKm: Number(trip.distance_traveled) || trip.route?.distance_km || 0,
     reasonForTrip: trip.notes || 'Trip',
     driverSign: trip.driver?.full_name || '',
-    // Revenue - not tracked in current schema, set to 0
-    revenueCash: 0,
-    revenueOnline: 0,
-    revenuePaytm: 0,
-    revenueOthers: 0,
-    revenueTotal: 0,
+    // Revenue from trip data
+    revenueCash: Number(trip.revenue_cash) || 0,
+    revenueOnline: Number(trip.revenue_online) || 0,
+    revenuePaytm: Number(trip.revenue_paytm) || 0,
+    revenueOthers: Number(trip.revenue_others) || 0,
+    revenueTotal: totalRevenue,
     // Expenses
     expenseDiesel: expenseByCategory.diesel,
     expenseDriver: expenseByCategory.driver,
@@ -229,6 +238,6 @@ export function mapTripToSheetData(
     expenseGovtDuty: expenseByCategory.govtDuty,
     expenseOthers: expenseByCategory.others,
     expenseTotal: totalExpense,
-    netIncome: 0 - totalExpense, // Revenue - Expenses
+    netIncome: totalRevenue - totalExpense,
   };
 }

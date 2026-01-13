@@ -64,11 +64,19 @@ export interface Trip {
   status: TripStatus;
   notes: string | null;
   total_expense: number;
+  odometer_start: number | null;
+  odometer_end: number | null;
+  distance_traveled: number | null;
+  revenue_cash: number | null;
+  revenue_online: number | null;
+  revenue_paytm: number | null;
+  revenue_others: number | null;
+  total_revenue: number | null;
   created_at: string;
   updated_at: string;
-  bus?: Bus;
-  driver?: Profile;
-  route?: Route;
+  bus?: Bus | { registration_number: string; bus_name?: string | null };
+  driver?: Profile | { full_name: string };
+  route?: Route | { route_name: string; distance_km?: number | null; from_address?: string | null; to_address?: string | null };
 }
 
 export interface ExpenseCategory {

@@ -281,42 +281,66 @@ export type Database = {
         Row: {
           bus_id: string
           created_at: string
+          distance_traveled: number | null
           driver_id: string
           end_date: string | null
           id: string
           notes: string | null
+          odometer_end: number | null
+          odometer_start: number | null
+          revenue_cash: number | null
+          revenue_online: number | null
+          revenue_others: number | null
+          revenue_paytm: number | null
           route_id: string
           start_date: string
           status: Database["public"]["Enums"]["trip_status"]
           total_expense: number | null
+          total_revenue: number | null
           trip_number: string
           updated_at: string
         }
         Insert: {
           bus_id: string
           created_at?: string
+          distance_traveled?: number | null
           driver_id: string
           end_date?: string | null
           id?: string
           notes?: string | null
+          odometer_end?: number | null
+          odometer_start?: number | null
+          revenue_cash?: number | null
+          revenue_online?: number | null
+          revenue_others?: number | null
+          revenue_paytm?: number | null
           route_id: string
           start_date: string
           status?: Database["public"]["Enums"]["trip_status"]
           total_expense?: number | null
+          total_revenue?: number | null
           trip_number: string
           updated_at?: string
         }
         Update: {
           bus_id?: string
           created_at?: string
+          distance_traveled?: number | null
           driver_id?: string
           end_date?: string | null
           id?: string
           notes?: string | null
+          odometer_end?: number | null
+          odometer_start?: number | null
+          revenue_cash?: number | null
+          revenue_online?: number | null
+          revenue_others?: number | null
+          revenue_paytm?: number | null
           route_id?: string
           start_date?: string
           status?: Database["public"]["Enums"]["trip_status"]
           total_expense?: number | null
+          total_revenue?: number | null
           trip_number?: string
           updated_at?: string
         }
