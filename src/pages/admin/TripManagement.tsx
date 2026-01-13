@@ -11,11 +11,13 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
 import { Trip, TripStatus, Bus, Profile, Route } from '@/types/database';
-import { Plus, Pencil, Loader2, Download, Eye, FileSpreadsheet } from 'lucide-react';
+import { Plus, Pencil, Loader2, Download, Eye, FileSpreadsheet, IndianRupee, Calendar } from 'lucide-react';
 import { toast } from 'sonner';
 import { exportToExcel, formatCurrency, formatDate } from '@/lib/exportUtils';
 import { exportTripSheet, mapTripToSheetData } from '@/lib/tripSheetExport';
 import TripExpensesDialog from '@/components/TripExpensesDialog';
+import TripRevenueDialog from '@/components/TripRevenueDialog';
+import PeriodExportDialog from '@/components/PeriodExportDialog';
 
 export default function TripManagement() {
   const [trips, setTrips] = useState<Trip[]>([]);
@@ -38,10 +40,18 @@ export default function TripManagement() {
   const [submitting, setSubmitting] = useState(false);
   const [expenseDialogOpen, setExpenseDialogOpen] = useState(false);
   const [selectedTrip, setSelectedTrip] = useState<Trip | null>(null);
+  const [revenueDialogOpen, setRevenueDialogOpen] = useState(false);
+  const [revenueTrip, setRevenueTrip] = useState<Trip | null>(null);
+  const [periodDialogOpen, setPeriodDialogOpen] = useState(false);
 
   function handleViewExpenses(trip: Trip) {
     setSelectedTrip(trip);
     setExpenseDialogOpen(true);
+  }
+
+  function handleAddRevenue(trip: Trip) {
+    setRevenueTrip(trip);
+    setRevenueDialogOpen(true);
   }
 
   function handleExportTrips() {
@@ -57,6 +67,10 @@ export default function TripManagement() {
         { header: 'Start Date', key: 'start_date', format: formatDate },
         { header: 'End Date', key: 'end_date', format: formatDate },
         { header: 'Status', key: 'status' },
+        { header: 'Odometer Start', key: 'odometer_start', format: (v) => Number(v) || '-' },
+        { header: 'Odometer End', key: 'odometer_end', format: (v) => Number(v) || '-' },
+        { header: 'Distance (km)', key: 'distance_traveled', format: (v) => Number(v) || '-' },
+        { header: 'Total Revenue', key: 'total_revenue', format: (v) => Number(v) || 0 },
         { header: 'Total Expense', key: 'total_expense', format: (v) => Number(v) || 0 },
       ],
       'trips-report'
@@ -106,6 +120,14 @@ export default function TripManagement() {
             status: trip.status,
             notes: trip.notes,
             total_expense: trip.total_expense,
+            odometer_start: trip.odometer_start,
+            odometer_end: trip.odometer_end,
+            distance_traveled: trip.distance_traveled,
+            revenue_cash: trip.revenue_cash,
+            revenue_online: trip.revenue_online,
+            revenue_paytm: trip.revenue_paytm,
+            revenue_others: trip.revenue_others,
+            total_revenue: trip.total_revenue,
             bus: trip.bus as any,
             route: trip.route as any,
             driver: trip.driver as any,
@@ -148,7 +170,7 @@ export default function TripManagement() {
     if (error) {
       toast.error('Failed to fetch trips');
     } else {
-      setTrips(data as Trip[]);
+      setTrips((data || []) as Trip[]);
     }
     setLoading(false);
   }
@@ -276,7 +298,11 @@ export default function TripManagement() {
             <h1 className="text-2xl font-bold">Trip Management</h1>
             <p className="text-muted-foreground">Schedule and manage trips</p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
+            <Button variant="outline" onClick={() => setPeriodDialogOpen(true)}>
+              <Calendar className="h-4 w-4 mr-2" />
+              Fleet Report
+            </Button>
             <Button variant="outline" onClick={handleExportTripSheet} disabled={trips.length === 0}>
               <FileSpreadsheet className="h-4 w-4 mr-2" />
               Trip Sheet
@@ -436,20 +462,21 @@ export default function TripManagement() {
                   <TableHead>Route</TableHead>
                   <TableHead>Start Date</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead>Total Expense</TableHead>
-                  <TableHead className="w-[100px]">Actions</TableHead>
+                  <TableHead>Revenue</TableHead>
+                  <TableHead>Expense</TableHead>
+                  <TableHead className="w-[120px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center py-8">
+                    <TableCell colSpan={9} className="text-center py-8">
                       <Loader2 className="h-6 w-6 animate-spin mx-auto" />
                     </TableCell>
                   </TableRow>
                 ) : trips.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
                       No trips created yet
                     </TableCell>
                   </TableRow>
@@ -468,9 +495,17 @@ export default function TripManagement() {
                         })}
                       </TableCell>
                       <TableCell>{getStatusBadge(trip.status)}</TableCell>
-                      <TableCell>{formatCurrency(Number(trip.total_expense))}</TableCell>
+                      <TableCell className="text-green-600 font-medium">
+                        {formatCurrency(Number(trip.total_revenue || 0))}
+                      </TableCell>
+                      <TableCell className="text-red-600">
+                        {formatCurrency(Number(trip.total_expense || 0))}
+                      </TableCell>
                       <TableCell>
                         <div className="flex gap-1">
+                          <Button variant="ghost" size="icon" onClick={() => handleAddRevenue(trip)} title="Add Revenue">
+                            <IndianRupee className="h-4 w-4" />
+                          </Button>
                           <Button variant="ghost" size="icon" onClick={() => handleViewExpenses(trip)} title="View Expenses">
                             <Eye className="h-4 w-4" />
                           </Button>
@@ -495,6 +530,18 @@ export default function TripManagement() {
             tripNumber={selectedTrip.trip_number}
           />
         )}
+
+        <TripRevenueDialog
+          open={revenueDialogOpen}
+          onOpenChange={setRevenueDialogOpen}
+          trip={revenueTrip}
+          onSuccess={fetchTrips}
+        />
+
+        <PeriodExportDialog
+          open={periodDialogOpen}
+          onOpenChange={setPeriodDialogOpen}
+        />
       </div>
     </DashboardLayout>
   );
