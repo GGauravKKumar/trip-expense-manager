@@ -11,9 +11,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
 import { Trip, TripStatus, Bus, Profile, Route } from '@/types/database';
-import { Plus, Pencil, Loader2, Download, Eye } from 'lucide-react';
+import { Plus, Pencil, Loader2, Download, Eye, FileSpreadsheet } from 'lucide-react';
 import { toast } from 'sonner';
 import { exportToExcel, formatCurrency, formatDate } from '@/lib/exportUtils';
+import { exportTripSheet, mapTripToSheetData } from '@/lib/tripSheetExport';
 import TripExpensesDialog from '@/components/TripExpensesDialog';
 
 export default function TripManagement() {
@@ -60,6 +61,70 @@ export default function TripManagement() {
       ],
       'trips-report'
     );
+  }
+
+  async function handleExportTripSheet() {
+    if (trips.length === 0) return;
+    
+    toast.info('Generating Trip Sheet...');
+    
+    try {
+      // Get all expenses for these trips
+      const tripIds = trips.map(t => t.id);
+      const { data: expenses, error } = await supabase
+        .from('expenses')
+        .select(`
+          trip_id,
+          amount,
+          category:expense_categories(name)
+        `)
+        .in('trip_id', tripIds)
+        .eq('status', 'approved');
+      
+      if (error) throw error;
+
+      // Group expenses by trip
+      const expensesByTrip: Record<string, { category_name: string; amount: number }[]> = {};
+      expenses?.forEach(exp => {
+        if (!expensesByTrip[exp.trip_id]) {
+          expensesByTrip[exp.trip_id] = [];
+        }
+        expensesByTrip[exp.trip_id].push({
+          category_name: (exp.category as any)?.name || 'Other',
+          amount: exp.amount
+        });
+      });
+
+      // Map trips to sheet data
+      const sheetData = trips.map(trip => 
+        mapTripToSheetData(
+          {
+            id: trip.id,
+            trip_number: trip.trip_number,
+            start_date: trip.start_date,
+            end_date: trip.end_date,
+            status: trip.status,
+            notes: trip.notes,
+            total_expense: trip.total_expense,
+            bus: trip.bus as any,
+            route: trip.route as any,
+            driver: trip.driver as any,
+          },
+          expensesByTrip[trip.id] || []
+        )
+      );
+
+      // Get vehicle number from first trip or use 'All Vehicles'
+      const vehicleNo = trips.length === 1 
+        ? (trips[0].bus as any)?.registration_number || 'Unknown'
+        : 'Multiple Vehicles';
+
+      exportTripSheet(sheetData, vehicleNo, `bus-trip-sheet-${new Date().toISOString().slice(0, 10)}`);
+      toast.success('Trip Sheet downloaded successfully!');
+    } catch (error) {
+      console.error('Export error:', error);
+      toast.error('Failed to generate Trip Sheet');
+    }
   }
 
   useEffect(() => {
@@ -212,6 +277,10 @@ export default function TripManagement() {
             <p className="text-muted-foreground">Schedule and manage trips</p>
           </div>
           <div className="flex gap-2">
+            <Button variant="outline" onClick={handleExportTripSheet} disabled={trips.length === 0}>
+              <FileSpreadsheet className="h-4 w-4 mr-2" />
+              Trip Sheet
+            </Button>
             <Button variant="outline" onClick={handleExportTrips} disabled={trips.length === 0}>
               <Download className="h-4 w-4 mr-2" />
               Export
