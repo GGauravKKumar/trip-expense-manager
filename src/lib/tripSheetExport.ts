@@ -12,6 +12,8 @@ interface TripSheetData {
   distanceKm: number;
   reasonForTrip: string;
   driverSign: string;
+  tripType: 'one_way' | 'two_way';
+  journeyDirection: 'outward' | 'return';
   // Revenue
   revenueCash: number;
   revenueOnline: number;
@@ -35,10 +37,10 @@ export function exportTripSheet(trips: TripSheetData[], vehicleNo: string, filen
   
   // Create header rows
   const headerRows = [
-    ['BUS TRIP SHEET', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', ''],
-    ['Vehicle No', vehicleNo, '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', ''],
-    ['', 'Hours', '', 'Journey', '', 'Odometer Reading', '', '', '', '', 'Revenue from operation', '', '', '', '', 'Expenses in operation', '', '', '', '', '', '', ''],
-    ['Date', 'Out', 'Returned', 'From', 'To', 'Start', 'Finished', 'Dist KM', 'Reason for trip', 'Driver Sign', 'Cash', 'Online', 'Paytm', 'Others', 'G.Total', 'Diesel', 'Driver', 'Route Exp.', 'Maintenance', 'Govt. duty', 'Others', 'Total Exp.', 'N.Income'],
+    ['BUS TRIP SHEET', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', ''],
+    ['Vehicle No', vehicleNo, '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', ''],
+    ['', 'Hours', '', 'Journey', '', 'Odometer Reading', '', '', '', '', '', 'Revenue from operation', '', '', '', '', 'Expenses in operation', '', '', '', '', '', '', ''],
+    ['Date', 'Out', 'Returned', 'From', 'To', 'Start', 'Finished', 'Dist KM', 'Reason for trip', 'Driver Sign', 'Direction', 'Cash', 'Online', 'Paytm', 'Others', 'G.Total', 'Diesel', 'Driver', 'Route Exp.', 'Maintenance', 'Govt. duty', 'Others', 'Total Exp.', 'N.Income'],
   ];
 
   // Create data rows
@@ -53,6 +55,7 @@ export function exportTripSheet(trips: TripSheetData[], vehicleNo: string, filen
     trip.distanceKm || 0,
     trip.reasonForTrip || '',
     trip.driverSign || '',
+    trip.journeyDirection === 'return' ? '↩ Return' : '→ Outward',
     trip.revenueCash || 0,
     trip.revenueOnline || 0,
     trip.revenuePaytm || 0,
@@ -70,7 +73,7 @@ export function exportTripSheet(trips: TripSheetData[], vehicleNo: string, filen
 
   // Add empty rows to match template
   while (dataRows.length < 10) {
-    dataRows.push(['', '', '', '', '', '', '', 0, '', '', '', '', '', '', 0, '', '', '', '', '', '', 0, 0]);
+    dataRows.push(['', '', '', '', '', '', '', 0, '', '', '', '', '', '', '', 0, '', '', '', '', '', '', 0, 0]);
   }
 
   // Calculate totals
@@ -108,7 +111,7 @@ export function exportTripSheet(trips: TripSheetData[], vehicleNo: string, filen
 
   // Add totals row
   dataRows.push([
-    'TOTAL', '', '', '', '', '', '', totals.distanceKm, '', '',
+    'TOTAL', '', '', '', '', '', '', totals.distanceKm, '', '', '',
     totals.revenueCash, totals.revenueOnline, totals.revenuePaytm, totals.revenueOthers, totals.revenueTotal,
     totals.expenseDiesel, totals.expenseDriver, totals.expenseRoute, totals.expenseMaintenance, totals.expenseGovtDuty, totals.expenseOthers, totals.expenseTotal, totals.netIncome
   ]);
@@ -131,6 +134,7 @@ export function exportTripSheet(trips: TripSheetData[], vehicleNo: string, filen
     { wch: 8 },  // Dist KM
     { wch: 15 }, // Reason
     { wch: 12 }, // Driver Sign
+    { wch: 10 }, // Direction
     { wch: 10 }, // Cash
     { wch: 10 }, // Online
     { wch: 10 }, // Paytm
@@ -148,12 +152,12 @@ export function exportTripSheet(trips: TripSheetData[], vehicleNo: string, filen
 
   // Merge cells for headers
   worksheet['!merges'] = [
-    { s: { r: 0, c: 0 }, e: { r: 0, c: 22 } }, // BUS TRIP SHEET
+    { s: { r: 0, c: 0 }, e: { r: 0, c: 23 } }, // BUS TRIP SHEET
     { s: { r: 2, c: 1 }, e: { r: 2, c: 2 } },  // Hours
     { s: { r: 2, c: 3 }, e: { r: 2, c: 4 } },  // Journey
     { s: { r: 2, c: 5 }, e: { r: 2, c: 6 } },  // Odometer Reading
-    { s: { r: 2, c: 10 }, e: { r: 2, c: 14 } }, // Revenue from operation
-    { s: { r: 2, c: 15 }, e: { r: 2, c: 21 } }, // Expenses in operation
+    { s: { r: 2, c: 11 }, e: { r: 2, c: 15 } }, // Revenue from operation
+    { s: { r: 2, c: 16 }, e: { r: 2, c: 22 } }, // Expenses in operation
   ];
 
   XLSX.utils.book_append_sheet(workbook, worksheet, 'Trip Sheet');
@@ -161,6 +165,7 @@ export function exportTripSheet(trips: TripSheetData[], vehicleNo: string, filen
 }
 
 // Helper to convert trip data from database format to sheet format
+// For two-way trips, this returns an array with outward and return rows
 export function mapTripToSheetData(
   trip: {
     id: string;
@@ -169,6 +174,8 @@ export function mapTripToSheetData(
     end_date: string | null;
     status: string;
     notes: string | null;
+    trip_type?: string;
+    // Outward journey
     total_expense: number | null;
     odometer_start?: number | null;
     odometer_end?: number | null;
@@ -178,6 +185,16 @@ export function mapTripToSheetData(
     revenue_paytm?: number | null;
     revenue_others?: number | null;
     total_revenue?: number | null;
+    // Return journey
+    odometer_return_start?: number | null;
+    odometer_return_end?: number | null;
+    distance_return?: number | null;
+    return_revenue_cash?: number | null;
+    return_revenue_online?: number | null;
+    return_revenue_paytm?: number | null;
+    return_revenue_others?: number | null;
+    return_total_revenue?: number | null;
+    return_total_expense?: number | null;
     bus?: { registration_number: string; bus_name: string | null } | null;
     route?: { route_name: string; distance_km: number | null; from_address: string | null; to_address: string | null } | null;
     driver?: { full_name: string } | null;
@@ -186,8 +203,8 @@ export function mapTripToSheetData(
     category_name: string;
     amount: number;
   }[]
-): TripSheetData {
-  // Group expenses by category
+): TripSheetData[] {
+  // Group expenses by category (split between outward and return for two-way trips)
   const expenseByCategory = expenses.reduce((acc, exp) => {
     const category = exp.category_name.toLowerCase();
     if (category.includes('diesel') || category.includes('fuel')) {
@@ -212,32 +229,80 @@ export function mapTripToSheetData(
   const startDate = new Date(trip.start_date);
   const endDate = trip.end_date ? new Date(trip.end_date) : null;
 
-  return {
+  const routeParts = trip.route?.route_name?.split(' - ') || [];
+  const fromLocation = trip.route?.from_address || routeParts[0] || '';
+  const toLocation = trip.route?.to_address || routeParts[1] || '';
+
+  const isTwoWay = trip.trip_type === 'two_way';
+
+  // Outward journey data
+  const outwardData: TripSheetData = {
     vehicleNo: trip.bus?.registration_number || '',
     date: startDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'numeric', year: '2-digit' }),
     hoursOut: startDate.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }),
     hoursReturned: endDate ? endDate.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }) : '',
-    from: trip.route?.from_address || trip.route?.route_name?.split(' - ')[0] || '',
-    to: trip.route?.to_address || trip.route?.route_name?.split(' - ')[1] || '',
+    from: fromLocation,
+    to: toLocation,
     odometerStart: Number(trip.odometer_start) || 0,
     odometerFinished: Number(trip.odometer_end) || 0,
     distanceKm: Number(trip.distance_traveled) || trip.route?.distance_km || 0,
     reasonForTrip: trip.notes || 'Trip',
     driverSign: trip.driver?.full_name || '',
-    // Revenue from trip data
+    tripType: isTwoWay ? 'two_way' : 'one_way',
+    journeyDirection: 'outward',
+    // Revenue from outward journey
     revenueCash: Number(trip.revenue_cash) || 0,
     revenueOnline: Number(trip.revenue_online) || 0,
     revenuePaytm: Number(trip.revenue_paytm) || 0,
     revenueOthers: Number(trip.revenue_others) || 0,
     revenueTotal: totalRevenue,
-    // Expenses
-    expenseDiesel: expenseByCategory.diesel,
-    expenseDriver: expenseByCategory.driver,
-    expenseRoute: expenseByCategory.route,
-    expenseMaintenance: expenseByCategory.maintenance,
-    expenseGovtDuty: expenseByCategory.govtDuty,
-    expenseOthers: expenseByCategory.others,
-    expenseTotal: totalExpense,
-    netIncome: totalRevenue - totalExpense,
+    // Expenses (for two-way trips, split evenly or use return expense field)
+    expenseDiesel: isTwoWay ? expenseByCategory.diesel / 2 : expenseByCategory.diesel,
+    expenseDriver: isTwoWay ? expenseByCategory.driver / 2 : expenseByCategory.driver,
+    expenseRoute: isTwoWay ? expenseByCategory.route / 2 : expenseByCategory.route,
+    expenseMaintenance: isTwoWay ? expenseByCategory.maintenance / 2 : expenseByCategory.maintenance,
+    expenseGovtDuty: isTwoWay ? expenseByCategory.govtDuty / 2 : expenseByCategory.govtDuty,
+    expenseOthers: isTwoWay ? expenseByCategory.others / 2 : expenseByCategory.others,
+    expenseTotal: isTwoWay ? totalExpense / 2 : totalExpense,
+    netIncome: isTwoWay ? (totalRevenue - totalExpense / 2) : (totalRevenue - totalExpense),
   };
+
+  if (!isTwoWay) {
+    return [outwardData];
+  }
+
+  // Return journey data for two-way trips
+  const returnRevenue = Number(trip.return_total_revenue) || 0;
+  const returnData: TripSheetData = {
+    vehicleNo: trip.bus?.registration_number || '',
+    date: startDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'numeric', year: '2-digit' }),
+    hoursOut: '', // Return journey timing
+    hoursReturned: endDate ? endDate.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }) : '',
+    from: toLocation, // Swapped for return journey
+    to: fromLocation,
+    odometerStart: Number(trip.odometer_return_start) || 0,
+    odometerFinished: Number(trip.odometer_return_end) || 0,
+    distanceKm: Number(trip.distance_return) || trip.route?.distance_km || 0,
+    reasonForTrip: 'Return',
+    driverSign: trip.driver?.full_name || '',
+    tripType: 'two_way',
+    journeyDirection: 'return',
+    // Revenue from return journey
+    revenueCash: Number(trip.return_revenue_cash) || 0,
+    revenueOnline: Number(trip.return_revenue_online) || 0,
+    revenuePaytm: Number(trip.return_revenue_paytm) || 0,
+    revenueOthers: Number(trip.return_revenue_others) || 0,
+    revenueTotal: returnRevenue,
+    // Expenses (split for return journey)
+    expenseDiesel: expenseByCategory.diesel / 2,
+    expenseDriver: expenseByCategory.driver / 2,
+    expenseRoute: expenseByCategory.route / 2,
+    expenseMaintenance: expenseByCategory.maintenance / 2,
+    expenseGovtDuty: expenseByCategory.govtDuty / 2,
+    expenseOthers: expenseByCategory.others / 2,
+    expenseTotal: totalExpense / 2,
+    netIncome: returnRevenue - totalExpense / 2,
+  };
+
+  return [outwardData, returnData];
 }
