@@ -10,8 +10,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
-import { Trip, TripStatus, Bus, Profile, Route } from '@/types/database';
-import { Plus, Pencil, Loader2, Download, Eye, FileSpreadsheet, IndianRupee, Calendar } from 'lucide-react';
+import { Trip, TripStatus, TripType, Bus, Profile, Route } from '@/types/database';
+import { Plus, Pencil, Loader2, Download, Eye, FileSpreadsheet, IndianRupee, Calendar, ArrowLeftRight, ArrowRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { exportToExcel, formatCurrency, formatDate } from '@/lib/exportUtils';
 import { exportTripSheet, mapTripToSheetData } from '@/lib/tripSheetExport';
@@ -35,6 +35,7 @@ export default function TripManagement() {
     start_date: '',
     end_date: '',
     status: 'scheduled' as TripStatus,
+    trip_type: 'one_way' as TripType,
     notes: '',
   });
   const [submitting, setSubmitting] = useState(false);
@@ -109,8 +110,8 @@ export default function TripManagement() {
         });
       });
 
-      // Map trips to sheet data
-      const sheetData = trips.map(trip => 
+      // Map trips to sheet data (flatten for two-way trips that return multiple rows)
+      const sheetData = trips.flatMap(trip => 
         mapTripToSheetData(
           {
             id: trip.id,
@@ -119,6 +120,7 @@ export default function TripManagement() {
             end_date: trip.end_date,
             status: trip.status,
             notes: trip.notes,
+            trip_type: trip.trip_type,
             total_expense: trip.total_expense,
             odometer_start: trip.odometer_start,
             odometer_end: trip.odometer_end,
@@ -128,6 +130,14 @@ export default function TripManagement() {
             revenue_paytm: trip.revenue_paytm,
             revenue_others: trip.revenue_others,
             total_revenue: trip.total_revenue,
+            odometer_return_start: trip.odometer_return_start,
+            odometer_return_end: trip.odometer_return_end,
+            distance_return: trip.distance_return,
+            return_revenue_cash: trip.return_revenue_cash,
+            return_revenue_online: trip.return_revenue_online,
+            return_revenue_paytm: trip.return_revenue_paytm,
+            return_revenue_others: trip.return_revenue_others,
+            return_total_revenue: trip.return_total_revenue,
             bus: trip.bus as any,
             route: trip.route as any,
             driver: trip.driver as any,
@@ -221,6 +231,7 @@ export default function TripManagement() {
       start_date: trip.start_date.slice(0, 16),
       end_date: trip.end_date?.slice(0, 16) || '',
       status: trip.status,
+      trip_type: trip.trip_type || 'one_way',
       notes: trip.notes || '',
     });
     setDialogOpen(true);
@@ -236,6 +247,7 @@ export default function TripManagement() {
       start_date: '',
       end_date: '',
       status: 'scheduled',
+      trip_type: 'one_way',
       notes: '',
     });
     setDialogOpen(true);
@@ -253,6 +265,7 @@ export default function TripManagement() {
       start_date: formData.start_date,
       end_date: formData.end_date || null,
       status: formData.status,
+      trip_type: formData.trip_type,
       notes: formData.notes || null,
     };
 
@@ -410,22 +423,49 @@ export default function TripManagement() {
                     />
                   </div>
                 </div>
-                <div className="space-y-2">
-                  <Label>Status</Label>
-                  <Select
-                    value={formData.status}
-                    onValueChange={(value) => setFormData({ ...formData, status: value as TripStatus })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="scheduled">Scheduled</SelectItem>
-                      <SelectItem value="in_progress">In Progress</SelectItem>
-                      <SelectItem value="completed">Completed</SelectItem>
-                      <SelectItem value="cancelled">Cancelled</SelectItem>
-                    </SelectContent>
-                  </Select>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Trip Type</Label>
+                    <Select
+                      value={formData.trip_type}
+                      onValueChange={(value) => setFormData({ ...formData, trip_type: value as TripType })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="one_way">
+                          <div className="flex items-center gap-2">
+                            <ArrowRight className="h-4 w-4" />
+                            One-Way
+                          </div>
+                        </SelectItem>
+                        <SelectItem value="two_way">
+                          <div className="flex items-center gap-2">
+                            <ArrowLeftRight className="h-4 w-4" />
+                            Two-Way (Round Trip)
+                          </div>
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Status</Label>
+                    <Select
+                      value={formData.status}
+                      onValueChange={(value) => setFormData({ ...formData, status: value as TripStatus })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="scheduled">Scheduled</SelectItem>
+                        <SelectItem value="in_progress">In Progress</SelectItem>
+                        <SelectItem value="completed">Completed</SelectItem>
+                        <SelectItem value="cancelled">Cancelled</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="notes">Notes</Label>
@@ -457,6 +497,7 @@ export default function TripManagement() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Trip #</TableHead>
+                  <TableHead>Type</TableHead>
                   <TableHead>Bus</TableHead>
                   <TableHead>Driver</TableHead>
                   <TableHead>Route</TableHead>
@@ -470,52 +511,70 @@ export default function TripManagement() {
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={9} className="text-center py-8">
+                    <TableCell colSpan={10} className="text-center py-8">
                       <Loader2 className="h-6 w-6 animate-spin mx-auto" />
                     </TableCell>
                   </TableRow>
                 ) : trips.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
                       No trips created yet
                     </TableCell>
                   </TableRow>
                 ) : (
-                  trips.map((trip) => (
-                    <TableRow key={trip.id}>
-                      <TableCell className="font-medium">{trip.trip_number}</TableCell>
-                      <TableCell>{(trip.bus as any)?.registration_number}</TableCell>
-                      <TableCell>{(trip.driver as any)?.full_name}</TableCell>
-                      <TableCell>{(trip.route as any)?.route_name}</TableCell>
-                      <TableCell>
-                        {new Date(trip.start_date).toLocaleDateString('en-IN', {
-                          day: '2-digit',
-                          month: 'short',
-                          year: 'numeric',
-                        })}
-                      </TableCell>
-                      <TableCell>{getStatusBadge(trip.status)}</TableCell>
-                      <TableCell className="text-green-600 font-medium">
-                        {formatCurrency(Number(trip.total_revenue || 0))}
-                      </TableCell>
-                      <TableCell className="text-red-600">
-                        {formatCurrency(Number(trip.total_expense || 0))}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex gap-1">
-                          <Button variant="ghost" size="icon" onClick={() => handleAddRevenue(trip)} title="Add Revenue">
-                            <IndianRupee className="h-4 w-4" />
-                          </Button>
-                          <Button variant="ghost" size="icon" onClick={() => handleViewExpenses(trip)} title="View Expenses">
-                            <Eye className="h-4 w-4" />
-                          </Button>
-                          <Button variant="ghost" size="icon" onClick={() => handleEdit(trip)} title="Edit">
-                            <Pencil className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))
+                  trips.map((trip) => {
+                    const outwardRevenue = Number(trip.total_revenue || 0);
+                    const returnRevenue = Number(trip.return_total_revenue || 0);
+                    const totalRevenue = outwardRevenue + returnRevenue;
+                    const outwardExpense = Number(trip.total_expense || 0);
+                    const returnExpense = Number(trip.return_total_expense || 0);
+                    const totalExpense = outwardExpense + returnExpense;
+                    
+                    return (
+                      <TableRow key={trip.id}>
+                        <TableCell className="font-medium">{trip.trip_number}</TableCell>
+                        <TableCell>
+                          <Badge variant={trip.trip_type === 'two_way' ? 'default' : 'outline'}>
+                            {trip.trip_type === 'two_way' ? (
+                              <><ArrowLeftRight className="h-3 w-3 mr-1" />2-Way</>
+                            ) : (
+                              <><ArrowRight className="h-3 w-3 mr-1" />1-Way</>
+                            )}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>{(trip.bus as any)?.registration_number}</TableCell>
+                        <TableCell>{(trip.driver as any)?.full_name}</TableCell>
+                        <TableCell>{(trip.route as any)?.route_name}</TableCell>
+                        <TableCell>
+                          {new Date(trip.start_date).toLocaleDateString('en-IN', {
+                            day: '2-digit',
+                            month: 'short',
+                            year: 'numeric',
+                          })}
+                        </TableCell>
+                        <TableCell>{getStatusBadge(trip.status)}</TableCell>
+                        <TableCell className="text-green-600 font-medium">
+                          {formatCurrency(totalRevenue)}
+                        </TableCell>
+                        <TableCell className="text-red-600">
+                          {formatCurrency(totalExpense)}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex gap-1">
+                            <Button variant="ghost" size="icon" onClick={() => handleAddRevenue(trip)} title="Add Revenue">
+                              <IndianRupee className="h-4 w-4" />
+                            </Button>
+                            <Button variant="ghost" size="icon" onClick={() => handleViewExpenses(trip)} title="View Expenses">
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                            <Button variant="ghost" size="icon" onClick={() => handleEdit(trip)} title="Edit">
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
                 )}
               </TableBody>
             </Table>

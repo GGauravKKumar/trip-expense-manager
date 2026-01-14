@@ -53,6 +53,8 @@ export interface Route {
   to_state?: IndianState;
 }
 
+export type TripType = 'one_way' | 'two_way';
+
 export interface Trip {
   id: string;
   trip_number: string;
@@ -63,6 +65,8 @@ export interface Trip {
   end_date: string | null;
   status: TripStatus;
   notes: string | null;
+  trip_type: TripType;
+  // Outward journey
   total_expense: number;
   odometer_start: number | null;
   odometer_end: number | null;
@@ -72,6 +76,16 @@ export interface Trip {
   revenue_paytm: number | null;
   revenue_others: number | null;
   total_revenue: number | null;
+  // Return journey
+  odometer_return_start: number | null;
+  odometer_return_end: number | null;
+  distance_return: number | null;
+  return_revenue_cash: number | null;
+  return_revenue_online: number | null;
+  return_revenue_paytm: number | null;
+  return_revenue_others: number | null;
+  return_total_revenue: number | null;
+  return_total_expense: number | null;
   created_at: string;
   updated_at: string;
   bus?: Bus | { registration_number: string; bus_name?: string | null };

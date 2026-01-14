@@ -7,10 +7,11 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { Trip, TripStatus } from '@/types/database';
-import { Loader2, Gauge } from 'lucide-react';
+import { Loader2, Gauge, ArrowRight, ArrowLeft } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function DriverTrips() {
@@ -20,7 +21,12 @@ export default function DriverTrips() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedTrip, setSelectedTrip] = useState<Trip | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [odometerData, setOdometerData] = useState({ start: '', end: '' });
+  const [odometerData, setOdometerData] = useState({
+    start: '',
+    end: '',
+    return_start: '',
+    return_end: '',
+  });
 
   useEffect(() => { if (user) fetchTrips(); }, [user]);
 
@@ -43,6 +49,8 @@ export default function DriverTrips() {
     setOdometerData({
       start: trip.odometer_start?.toString() || '',
       end: trip.odometer_end?.toString() || '',
+      return_start: trip.odometer_return_start?.toString() || '',
+      return_end: trip.odometer_return_end?.toString() || '',
     });
     setDialogOpen(true);
   }
@@ -64,14 +72,30 @@ export default function DriverTrips() {
       return;
     }
 
+    const updateData: Record<string, number | null> = {
+      odometer_start: start,
+      odometer_end: end,
+    };
+
+    // Handle two-way trip return journey
+    if (selectedTrip.trip_type === 'two_way') {
+      const returnStart = odometerData.return_start ? parseFloat(odometerData.return_start) : null;
+      const returnEnd = odometerData.return_end ? parseFloat(odometerData.return_end) : null;
+
+      if (returnStart !== null && returnEnd !== null && returnEnd < returnStart) {
+        toast.error('Return end reading cannot be less than return start reading');
+        return;
+      }
+
+      updateData.odometer_return_start = returnStart;
+      updateData.odometer_return_end = returnEnd;
+    }
+
     setSubmitting(true);
 
     const { error } = await supabase
       .from('trips')
-      .update({
-        odometer_start: start,
-        odometer_end: end,
-      })
+      .update(updateData)
       .eq('id', selectedTrip.id);
 
     if (error) {
@@ -98,6 +122,17 @@ export default function DriverTrips() {
     return status === 'in_progress' || status === 'scheduled';
   };
 
+  const calculateDistance = (start: string, end: string) => {
+    const s = parseFloat(start);
+    const e = parseFloat(end);
+    if (!isNaN(s) && !isNaN(e) && e >= s) {
+      return e - s;
+    }
+    return null;
+  };
+
+  const isTwoWay = selectedTrip?.trip_type === 'two_way';
+
   return (
     <DashboardLayout>
       <div className="space-y-6">
@@ -108,13 +143,13 @@ export default function DriverTrips() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Trip #</TableHead>
+                  <TableHead>Type</TableHead>
                   <TableHead>Bus</TableHead>
                   <TableHead>Route</TableHead>
                   <TableHead>Date</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Odometer</TableHead>
                   <TableHead>Distance</TableHead>
-                  <TableHead>Expense</TableHead>
                   <TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -132,40 +167,55 @@ export default function DriverTrips() {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  trips.map((t) => (
-                    <TableRow key={t.id}>
-                      <TableCell className="font-medium">{t.trip_number}</TableCell>
-                      <TableCell>{(t.bus as any)?.registration_number}</TableCell>
-                      <TableCell>{(t.route as any)?.route_name}</TableCell>
-                      <TableCell>{new Date(t.start_date).toLocaleDateString('en-IN')}</TableCell>
-                      <TableCell>{getStatusBadge(t.status)}</TableCell>
-                      <TableCell>
-                        {t.odometer_start ? (
-                          <span className="text-sm">
-                            {t.odometer_start} → {t.odometer_end || '...'}
-                          </span>
-                        ) : (
-                          <span className="text-muted-foreground text-sm">Not set</span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {t.distance_traveled ? (
-                          <span className="font-medium">{t.distance_traveled} km</span>
-                        ) : (
-                          <span className="text-muted-foreground">-</span>
-                        )}
-                      </TableCell>
-                      <TableCell>₹{Number(t.total_expense || 0).toLocaleString('en-IN')}</TableCell>
-                      <TableCell>
-                        {canEditOdometer(t.status) && (
-                          <Button size="sm" variant="outline" onClick={() => handleUpdateOdometer(t)}>
-                            <Gauge className="h-4 w-4 mr-1" />
-                            Odometer
-                          </Button>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))
+                  trips.map((t) => {
+                    const outwardDistance = Number(t.distance_traveled) || 0;
+                    const returnDistance = Number(t.distance_return) || 0;
+                    const totalDistance = outwardDistance + returnDistance;
+                    
+                    return (
+                      <TableRow key={t.id}>
+                        <TableCell className="font-medium">{t.trip_number}</TableCell>
+                        <TableCell>
+                          <Badge variant={t.trip_type === 'two_way' ? 'default' : 'outline'}>
+                            {t.trip_type === 'two_way' ? 'Two-Way' : 'One-Way'}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>{(t.bus as any)?.registration_number}</TableCell>
+                        <TableCell>{(t.route as any)?.route_name}</TableCell>
+                        <TableCell>{new Date(t.start_date).toLocaleDateString('en-IN')}</TableCell>
+                        <TableCell>{getStatusBadge(t.status)}</TableCell>
+                        <TableCell>
+                          {t.odometer_start ? (
+                            <div className="text-sm">
+                              <div>{t.odometer_start} → {t.odometer_end || '...'}</div>
+                              {t.trip_type === 'two_way' && (
+                                <div className="text-muted-foreground">
+                                  ↩ {t.odometer_return_start || '...'} → {t.odometer_return_end || '...'}
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground text-sm">Not set</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {totalDistance > 0 ? (
+                            <span className="font-medium">{totalDistance} km</span>
+                          ) : (
+                            <span className="text-muted-foreground">-</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {canEditOdometer(t.status) && (
+                            <Button size="sm" variant="outline" onClick={() => handleUpdateOdometer(t)}>
+                              <Gauge className="h-4 w-4 mr-1" />
+                              Odometer
+                            </Button>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
                 )}
               </TableBody>
             </Table>
@@ -174,7 +224,7 @@ export default function DriverTrips() {
       </div>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent>
+        <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Update Odometer Readings</DialogTitle>
           </DialogHeader>
@@ -183,38 +233,132 @@ export default function DriverTrips() {
               <p className="text-sm font-medium">Trip: {selectedTrip?.trip_number}</p>
               <p className="text-sm text-muted-foreground">
                 {(selectedTrip?.route as any)?.route_name}
+                {isTwoWay && ' (Two-Way)'}
               </p>
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="odometer_start">Start Reading (km)</Label>
-                <Input
-                  id="odometer_start"
-                  type="number"
-                  value={odometerData.start}
-                  onChange={(e) => setOdometerData({ ...odometerData, start: e.target.value })}
-                  placeholder="e.g., 45000"
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="odometer_end">End Reading (km)</Label>
-                <Input
-                  id="odometer_end"
-                  type="number"
-                  value={odometerData.end}
-                  onChange={(e) => setOdometerData({ ...odometerData, end: e.target.value })}
-                  placeholder="e.g., 45350"
-                />
-              </div>
-            </div>
-            {odometerData.start && odometerData.end && (
+
+            {isTwoWay ? (
+              <Tabs defaultValue="outward" className="w-full">
+                <TabsList className="grid w-full grid-cols-2">
+                  <TabsTrigger value="outward" className="flex items-center gap-1">
+                    <ArrowRight className="h-3 w-3" />
+                    Outward
+                  </TabsTrigger>
+                  <TabsTrigger value="return" className="flex items-center gap-1">
+                    <ArrowLeft className="h-3 w-3" />
+                    Return
+                  </TabsTrigger>
+                </TabsList>
+                <TabsContent value="outward" className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="odometer_start">Start (km)</Label>
+                      <Input
+                        id="odometer_start"
+                        type="number"
+                        value={odometerData.start}
+                        onChange={(e) => setOdometerData({ ...odometerData, start: e.target.value })}
+                        placeholder="e.g., 45000"
+                        required
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="odometer_end">End (km)</Label>
+                      <Input
+                        id="odometer_end"
+                        type="number"
+                        value={odometerData.end}
+                        onChange={(e) => setOdometerData({ ...odometerData, end: e.target.value })}
+                        placeholder="e.g., 45350"
+                      />
+                    </div>
+                  </div>
+                  {calculateDistance(odometerData.start, odometerData.end) !== null && (
+                    <div className="p-3 bg-green-500/10 rounded-lg">
+                      <p className="text-sm font-medium text-green-700">
+                        Outward Distance: {calculateDistance(odometerData.start, odometerData.end)} km
+                      </p>
+                    </div>
+                  )}
+                </TabsContent>
+                <TabsContent value="return" className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="return_start">Start (km)</Label>
+                      <Input
+                        id="return_start"
+                        type="number"
+                        value={odometerData.return_start}
+                        onChange={(e) => setOdometerData({ ...odometerData, return_start: e.target.value })}
+                        placeholder="e.g., 45350"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="return_end">End (km)</Label>
+                      <Input
+                        id="return_end"
+                        type="number"
+                        value={odometerData.return_end}
+                        onChange={(e) => setOdometerData({ ...odometerData, return_end: e.target.value })}
+                        placeholder="e.g., 45700"
+                      />
+                    </div>
+                  </div>
+                  {calculateDistance(odometerData.return_start, odometerData.return_end) !== null && (
+                    <div className="p-3 bg-blue-500/10 rounded-lg">
+                      <p className="text-sm font-medium text-blue-700">
+                        Return Distance: {calculateDistance(odometerData.return_start, odometerData.return_end)} km
+                      </p>
+                    </div>
+                  )}
+                </TabsContent>
+              </Tabs>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="odometer_start">Start Reading (km)</Label>
+                    <Input
+                      id="odometer_start"
+                      type="number"
+                      value={odometerData.start}
+                      onChange={(e) => setOdometerData({ ...odometerData, start: e.target.value })}
+                      placeholder="e.g., 45000"
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="odometer_end">End Reading (km)</Label>
+                    <Input
+                      id="odometer_end"
+                      type="number"
+                      value={odometerData.end}
+                      onChange={(e) => setOdometerData({ ...odometerData, end: e.target.value })}
+                      placeholder="e.g., 45350"
+                    />
+                  </div>
+                </div>
+                {calculateDistance(odometerData.start, odometerData.end) !== null && (
+                  <div className="p-3 bg-primary/10 rounded-lg">
+                    <p className="text-sm font-medium">
+                      Distance: {calculateDistance(odometerData.start, odometerData.end)} km
+                    </p>
+                  </div>
+                )}
+              </>
+            )}
+
+            {isTwoWay && (
               <div className="p-3 bg-primary/10 rounded-lg">
                 <p className="text-sm font-medium">
-                  Distance: {parseFloat(odometerData.end) - parseFloat(odometerData.start)} km
+                  Total Distance: {
+                    (calculateDistance(odometerData.start, odometerData.end) || 0) +
+                    (calculateDistance(odometerData.return_start, odometerData.return_end) || 0)
+                  } km
                 </p>
               </div>
             )}
+
             <div className="flex justify-end gap-2">
               <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
                 Cancel
