@@ -112,10 +112,10 @@ export default function PeriodExportDialog({ open, onOpenChange }: PeriodExportD
         tripsByBus[busNo].push(trip);
       });
 
-      // Map to export format
+      // Map to export format - flatten the array since mapTripToPeriodData returns an array
       const busData = Object.entries(tripsByBus).map(([vehicleNo, busTrips]) => ({
         vehicleNo,
-        trips: busTrips.map((trip) =>
+        trips: busTrips.flatMap((trip) =>
           mapTripToPeriodData(
             {
               id: trip.id,
@@ -123,6 +123,7 @@ export default function PeriodExportDialog({ open, onOpenChange }: PeriodExportD
               start_date: trip.start_date,
               end_date: trip.end_date,
               notes: trip.notes,
+              trip_type: trip.trip_type,
               odometer_start: trip.odometer_start,
               odometer_end: trip.odometer_end,
               distance_traveled: trip.distance_traveled,
@@ -131,6 +132,14 @@ export default function PeriodExportDialog({ open, onOpenChange }: PeriodExportD
               revenue_paytm: trip.revenue_paytm,
               revenue_others: trip.revenue_others,
               total_revenue: trip.total_revenue,
+              odometer_return_start: trip.odometer_return_start,
+              odometer_return_end: trip.odometer_return_end,
+              distance_return: trip.distance_return,
+              return_revenue_cash: trip.return_revenue_cash,
+              return_revenue_online: trip.return_revenue_online,
+              return_revenue_paytm: trip.return_revenue_paytm,
+              return_revenue_others: trip.return_revenue_others,
+              return_total_revenue: trip.return_total_revenue,
               route: trip.route as any,
               driver: trip.driver as any,
             },
