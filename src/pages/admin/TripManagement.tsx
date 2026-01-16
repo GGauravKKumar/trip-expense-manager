@@ -159,6 +159,69 @@ export default function TripManagement() {
     }
   }
 
+  async function handleDownloadSingleTripSheet(trip: Trip) {
+    toast.info('Generating Trip Sheet...');
+    
+    try {
+      const { data: expenses, error } = await supabase
+        .from('expenses')
+        .select(`
+          trip_id,
+          amount,
+          category:expense_categories(name)
+        `)
+        .eq('trip_id', trip.id)
+        .eq('status', 'approved');
+      
+      if (error) throw error;
+
+      const tripExpenses = expenses?.map(exp => ({
+        category_name: (exp.category as any)?.name || 'Other',
+        amount: exp.amount
+      })) || [];
+
+      const sheetData = mapTripToSheetData(
+        {
+          id: trip.id,
+          trip_number: trip.trip_number,
+          start_date: trip.start_date,
+          end_date: trip.end_date,
+          status: trip.status,
+          notes: trip.notes,
+          trip_type: trip.trip_type,
+          total_expense: trip.total_expense,
+          odometer_start: trip.odometer_start,
+          odometer_end: trip.odometer_end,
+          distance_traveled: trip.distance_traveled,
+          revenue_cash: trip.revenue_cash,
+          revenue_online: trip.revenue_online,
+          revenue_paytm: trip.revenue_paytm,
+          revenue_others: trip.revenue_others,
+          total_revenue: trip.total_revenue,
+          odometer_return_start: trip.odometer_return_start,
+          odometer_return_end: trip.odometer_return_end,
+          distance_return: trip.distance_return,
+          return_revenue_cash: trip.return_revenue_cash,
+          return_revenue_online: trip.return_revenue_online,
+          return_revenue_paytm: trip.return_revenue_paytm,
+          return_revenue_others: trip.return_revenue_others,
+          return_total_revenue: trip.return_total_revenue,
+          bus: trip.bus as any,
+          route: trip.route as any,
+          driver: trip.driver as any,
+        },
+        tripExpenses
+      );
+
+      const vehicleNo = (trip.bus as any)?.registration_number || 'Unknown';
+      exportTripSheet(sheetData, vehicleNo, `trip-sheet-${trip.trip_number}`);
+      toast.success('Trip Sheet downloaded!');
+    } catch (error) {
+      console.error('Export error:', error);
+      toast.error('Failed to generate Trip Sheet');
+    }
+  }
+
   useEffect(() => {
     fetchTrips();
     fetchBuses();
@@ -561,6 +624,9 @@ export default function TripManagement() {
                         </TableCell>
                         <TableCell>
                           <div className="flex gap-1">
+                            <Button variant="ghost" size="icon" onClick={() => handleDownloadSingleTripSheet(trip)} title="Download Trip Sheet">
+                              <FileSpreadsheet className="h-4 w-4" />
+                            </Button>
                             <Button variant="ghost" size="icon" onClick={() => handleAddRevenue(trip)} title="Add Revenue">
                               <IndianRupee className="h-4 w-4" />
                             </Button>
