@@ -52,32 +52,20 @@ export default function TripRevenueDialog({ open, onOpenChange, trip, onSuccess 
 
     setSubmitting(true);
 
-    const outwardSum = 
-      (parseFloat(formData.revenue_cash) || 0) +
-      (parseFloat(formData.revenue_online) || 0) +
-      (parseFloat(formData.revenue_paytm) || 0) +
-      (parseFloat(formData.revenue_others) || 0);
-
     const updateData: Record<string, number> = {
       revenue_cash: parseFloat(formData.revenue_cash) || 0,
       revenue_online: parseFloat(formData.revenue_online) || 0,
       revenue_paytm: parseFloat(formData.revenue_paytm) || 0,
       revenue_others: parseFloat(formData.revenue_others) || 0,
-      total_revenue: outwardSum,
     };
 
+    // NOTE: total_revenue / return_total_revenue are generated columns in the database,
+    // so we should not try to update them directly.
     if (trip.trip_type === 'two_way') {
-      const returnSum = 
-        (parseFloat(formData.return_revenue_cash) || 0) +
-        (parseFloat(formData.return_revenue_online) || 0) +
-        (parseFloat(formData.return_revenue_paytm) || 0) +
-        (parseFloat(formData.return_revenue_others) || 0);
-
       updateData.return_revenue_cash = parseFloat(formData.return_revenue_cash) || 0;
       updateData.return_revenue_online = parseFloat(formData.return_revenue_online) || 0;
       updateData.return_revenue_paytm = parseFloat(formData.return_revenue_paytm) || 0;
       updateData.return_revenue_others = parseFloat(formData.return_revenue_others) || 0;
-      updateData.return_total_revenue = returnSum;
     }
 
     const { error } = await supabase
@@ -86,7 +74,8 @@ export default function TripRevenueDialog({ open, onOpenChange, trip, onSuccess 
       .eq('id', trip.id);
 
     if (error) {
-      toast.error('Failed to update revenue');
+      console.error('Revenue update error:', error);
+      toast.error(error.message || 'Failed to update revenue');
     } else {
       toast.success('Revenue updated successfully');
       onOpenChange(false);

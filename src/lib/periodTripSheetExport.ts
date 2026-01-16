@@ -275,7 +275,18 @@ export function mapTripToPeriodData(
   );
 
   const totalExpense = Object.values(expenseByCategory).reduce((a, b) => a + b, 0);
-  const totalRevenue = trip.total_revenue || 0;
+
+  const outwardRevenueTotal =
+    (Number(trip.revenue_cash) || 0) +
+    (Number(trip.revenue_online) || 0) +
+    (Number(trip.revenue_paytm) || 0) +
+    (Number(trip.revenue_others) || 0);
+
+  const returnRevenueTotal =
+    (Number(trip.return_revenue_cash) || 0) +
+    (Number(trip.return_revenue_online) || 0) +
+    (Number(trip.return_revenue_paytm) || 0) +
+    (Number(trip.return_revenue_others) || 0);
 
   const startDate = new Date(trip.start_date);
   const endDate = trip.end_date ? new Date(trip.end_date) : null;
@@ -303,7 +314,7 @@ export function mapTripToPeriodData(
     revenueOnline: Number(trip.revenue_online) || 0,
     revenuePaytm: Number(trip.revenue_paytm) || 0,
     revenueOthers: Number(trip.revenue_others) || 0,
-    revenueTotal: Number(totalRevenue) || 0,
+    revenueTotal: outwardRevenueTotal,
     expenseDiesel: isTwoWay ? expenseByCategory.diesel / 2 : expenseByCategory.diesel,
     expenseDriver: isTwoWay ? expenseByCategory.driver / 2 : expenseByCategory.driver,
     expenseRoute: isTwoWay ? expenseByCategory.route / 2 : expenseByCategory.route,
@@ -311,7 +322,7 @@ export function mapTripToPeriodData(
     expenseGovtDuty: isTwoWay ? expenseByCategory.govtDuty / 2 : expenseByCategory.govtDuty,
     expenseOthers: isTwoWay ? expenseByCategory.others / 2 : expenseByCategory.others,
     expenseTotal: isTwoWay ? totalExpense / 2 : totalExpense,
-    netIncome: isTwoWay ? (Number(totalRevenue) - totalExpense / 2) : (Number(totalRevenue) - totalExpense),
+    netIncome: isTwoWay ? (outwardRevenueTotal - totalExpense / 2) : (outwardRevenueTotal - totalExpense),
   };
 
   if (!isTwoWay) {
@@ -319,7 +330,6 @@ export function mapTripToPeriodData(
   }
 
   // Return journey for two-way trips
-  const returnRevenue = trip.return_total_revenue || 0;
   const returnRow: TripRowData = {
     date: startDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'numeric', year: '2-digit' }),
     hoursOut: '',
@@ -336,7 +346,7 @@ export function mapTripToPeriodData(
     revenueOnline: Number(trip.return_revenue_online) || 0,
     revenuePaytm: Number(trip.return_revenue_paytm) || 0,
     revenueOthers: Number(trip.return_revenue_others) || 0,
-    revenueTotal: Number(returnRevenue) || 0,
+    revenueTotal: returnRevenueTotal,
     expenseDiesel: expenseByCategory.diesel / 2,
     expenseDriver: expenseByCategory.driver / 2,
     expenseRoute: expenseByCategory.route / 2,
@@ -344,7 +354,7 @@ export function mapTripToPeriodData(
     expenseGovtDuty: expenseByCategory.govtDuty / 2,
     expenseOthers: expenseByCategory.others / 2,
     expenseTotal: totalExpense / 2,
-    netIncome: Number(returnRevenue) - totalExpense / 2,
+    netIncome: returnRevenueTotal - totalExpense / 2,
   };
 
   return [outwardRow, returnRow];
