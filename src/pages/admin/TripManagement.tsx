@@ -586,12 +586,24 @@ export default function TripManagement() {
                   </TableRow>
                 ) : (
                   trips.map((trip) => {
-                    const outwardRevenue = Number(trip.total_revenue || 0);
-                    const returnRevenue = Number(trip.return_total_revenue || 0);
+                    // Calculate outward revenue
+                    const outwardRevenue = Number(trip.total_revenue) || (
+                      Number(trip.revenue_cash || 0) + 
+                      Number(trip.revenue_online || 0) + 
+                      Number(trip.revenue_paytm || 0) + 
+                      Number(trip.revenue_others || 0)
+                    );
+                    
+                    // Calculate return revenue (for backward compatibility with old data)
+                    const returnRevenue = Number(trip.return_total_revenue) || (
+                      Number(trip.return_revenue_cash || 0) + 
+                      Number(trip.return_revenue_online || 0) + 
+                      Number(trip.return_revenue_paytm || 0) + 
+                      Number(trip.return_revenue_others || 0)
+                    );
+                    
                     const totalRevenue = outwardRevenue + returnRevenue;
-                    const outwardExpense = Number(trip.total_expense || 0);
-                    const returnExpense = Number(trip.return_total_expense || 0);
-                    const totalExpense = outwardExpense + returnExpense;
+                    const totalExpense = Number(trip.total_expense || 0) + Number(trip.return_total_expense || 0);
                     
                     return (
                       <TableRow key={trip.id}>
