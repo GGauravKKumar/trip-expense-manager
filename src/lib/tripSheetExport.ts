@@ -224,7 +224,18 @@ export function mapTripToSheetData(
   }, { diesel: 0, driver: 0, route: 0, maintenance: 0, govtDuty: 0, others: 0 });
 
   const totalExpense = Object.values(expenseByCategory).reduce((a, b) => a + b, 0);
-  const totalRevenue = Number(trip.total_revenue) || 0;
+
+  const outwardRevenueTotal =
+    (Number(trip.revenue_cash) || 0) +
+    (Number(trip.revenue_online) || 0) +
+    (Number(trip.revenue_paytm) || 0) +
+    (Number(trip.revenue_others) || 0);
+
+  const returnRevenueTotal =
+    (Number(trip.return_revenue_cash) || 0) +
+    (Number(trip.return_revenue_online) || 0) +
+    (Number(trip.return_revenue_paytm) || 0) +
+    (Number(trip.return_revenue_others) || 0);
 
   const startDate = new Date(trip.start_date);
   const endDate = trip.end_date ? new Date(trip.end_date) : null;
@@ -255,7 +266,7 @@ export function mapTripToSheetData(
     revenueOnline: Number(trip.revenue_online) || 0,
     revenuePaytm: Number(trip.revenue_paytm) || 0,
     revenueOthers: Number(trip.revenue_others) || 0,
-    revenueTotal: totalRevenue,
+    revenueTotal: outwardRevenueTotal,
     // Expenses (for two-way trips, split evenly or use return expense field)
     expenseDiesel: isTwoWay ? expenseByCategory.diesel / 2 : expenseByCategory.diesel,
     expenseDriver: isTwoWay ? expenseByCategory.driver / 2 : expenseByCategory.driver,
@@ -264,7 +275,7 @@ export function mapTripToSheetData(
     expenseGovtDuty: isTwoWay ? expenseByCategory.govtDuty / 2 : expenseByCategory.govtDuty,
     expenseOthers: isTwoWay ? expenseByCategory.others / 2 : expenseByCategory.others,
     expenseTotal: isTwoWay ? totalExpense / 2 : totalExpense,
-    netIncome: isTwoWay ? (totalRevenue - totalExpense / 2) : (totalRevenue - totalExpense),
+    netIncome: isTwoWay ? (outwardRevenueTotal - totalExpense / 2) : (outwardRevenueTotal - totalExpense),
   };
 
   if (!isTwoWay) {
@@ -272,7 +283,6 @@ export function mapTripToSheetData(
   }
 
   // Return journey data for two-way trips
-  const returnRevenue = Number(trip.return_total_revenue) || 0;
   const returnData: TripSheetData = {
     vehicleNo: trip.bus?.registration_number || '',
     date: startDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'numeric', year: '2-digit' }),
@@ -292,7 +302,7 @@ export function mapTripToSheetData(
     revenueOnline: Number(trip.return_revenue_online) || 0,
     revenuePaytm: Number(trip.return_revenue_paytm) || 0,
     revenueOthers: Number(trip.return_revenue_others) || 0,
-    revenueTotal: returnRevenue,
+    revenueTotal: returnRevenueTotal,
     // Expenses (split for return journey)
     expenseDiesel: expenseByCategory.diesel / 2,
     expenseDriver: expenseByCategory.driver / 2,
@@ -301,7 +311,7 @@ export function mapTripToSheetData(
     expenseGovtDuty: expenseByCategory.govtDuty / 2,
     expenseOthers: expenseByCategory.others / 2,
     expenseTotal: totalExpense / 2,
-    netIncome: returnRevenue - totalExpense / 2,
+    netIncome: returnRevenueTotal - totalExpense / 2,
   };
 
   return [outwardData, returnData];
