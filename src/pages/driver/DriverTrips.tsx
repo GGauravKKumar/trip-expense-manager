@@ -72,9 +72,13 @@ export default function DriverTrips() {
       return;
     }
 
+    // Calculate outward distance
+    const distanceTraveled = end !== null && !isNaN(start) ? end - start : null;
+
     const updateData: Record<string, number | null> = {
       odometer_start: start,
       odometer_end: end,
+      distance_traveled: distanceTraveled,
     };
 
     // Handle two-way trip return journey
@@ -87,8 +91,12 @@ export default function DriverTrips() {
         return;
       }
 
+      // Calculate return distance
+      const distanceReturn = returnStart !== null && returnEnd !== null ? returnEnd - returnStart : null;
+
       updateData.odometer_return_start = returnStart;
       updateData.odometer_return_end = returnEnd;
+      updateData.distance_return = distanceReturn;
     }
 
     setSubmitting(true);
