@@ -180,11 +180,13 @@ export default function AdminDashboard() {
       `)
       .eq('status', 'completed');
 
-    const { data: dieselCategory } = await supabase
+    // Get all fuel-related categories (diesel, fuel, petrol, etc.)
+    const { data: fuelCategories } = await supabase
       .from('expense_categories')
-      .select('id')
-      .ilike('name', '%diesel%')
-      .maybeSingle();
+      .select('id, name')
+      .or('name.ilike.%diesel%,name.ilike.%fuel%,name.ilike.%petrol%');
+
+    const fuelCategoryIds = new Set(fuelCategories?.map(c => c.id) || []);
 
     const { data: expenses } = await supabase
       .from('expenses')
@@ -193,14 +195,14 @@ export default function AdminDashboard() {
 
     if (!trips) return;
 
-    const expensesByTrip: Record<string, { total: number; diesel: number }> = {};
+    const expensesByTrip: Record<string, { total: number; fuel: number }> = {};
     expenses?.forEach((exp) => {
       if (!expensesByTrip[exp.trip_id]) {
-        expensesByTrip[exp.trip_id] = { total: 0, diesel: 0 };
+        expensesByTrip[exp.trip_id] = { total: 0, fuel: 0 };
       }
       expensesByTrip[exp.trip_id].total += Number(exp.amount);
-      if (dieselCategory && exp.category_id === dieselCategory.id) {
-        expensesByTrip[exp.trip_id].diesel += Number(exp.amount);
+      if (fuelCategoryIds.has(exp.category_id)) {
+        expensesByTrip[exp.trip_id].fuel += Number(exp.amount);
       }
     });
 
@@ -209,7 +211,7 @@ export default function AdminDashboard() {
     const monthlyMap = new Map<string, { revenue: number; expense: number }>();
     const busProfit = new Map<string, { name: string; profit: number; trips: number }>();
     const driverProfit = new Map<string, { name: string; profit: number; trips: number }>();
-    const busFuel = new Map<string, { distance: number; diesel: number }>();
+    const busFuel = new Map<string, { distance: number; fuel: number }>();
 
     trips.forEach((trip) => {
       const bus = trip.bus as any;
@@ -221,7 +223,7 @@ export default function AdminDashboard() {
         (Number(trip.return_revenue_paytm) || 0) + (Number(trip.return_revenue_others) || 0);
       const tripRevenue = outwardRevenue + returnRevenue;
       const tripExpense = expensesByTrip[trip.id]?.total || 0;
-      const tripDiesel = expensesByTrip[trip.id]?.diesel || 0;
+      const tripFuel = expensesByTrip[trip.id]?.fuel || 0;
       const distance = (Number(trip.distance_traveled) || 0) + (Number(trip.distance_return) || 0);
       const tripProfit = tripRevenue - tripExpense;
 
@@ -248,11 +250,11 @@ export default function AdminDashboard() {
 
         // Fuel efficiency
         if (!busFuel.has(bus.id)) {
-          busFuel.set(bus.id, { distance: 0, diesel: 0 });
+          busFuel.set(bus.id, { distance: 0, fuel: 0 });
         }
         const bf = busFuel.get(bus.id)!;
         bf.distance += distance;
-        bf.diesel += tripDiesel;
+        bf.fuel += tripFuel;
       }
 
       // Driver profit
@@ -296,11 +298,11 @@ export default function AdminDashboard() {
         .map((d, i) => ({ id: String(i), name: d.name, profit: d.profit, trips: d.trips }))
     );
 
-    // Calculate fuel efficiency (₹90/liter average)
+    // Calculate fuel efficiency (₹90/liter average diesel price)
     const fuelData: FuelEfficiency[] = [];
     busFuel.forEach((data, busId) => {
-      if (data.diesel > 0 && data.distance > 0) {
-        const liters = data.diesel / 90;
+      if (data.fuel > 0 && data.distance > 0) {
+        const liters = data.fuel / 90; // Approximate liters based on ₹90/liter
         const efficiency = data.distance / liters;
         const busName = Array.from(busProfit.entries()).find(([id]) => id === busId)?.[1]?.name || busId;
         fuelData.push({ bus: busName, efficiency: Math.round(efficiency * 10) / 10 });
