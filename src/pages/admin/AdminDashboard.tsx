@@ -359,13 +359,13 @@ export default function AdminDashboard() {
     return `₹${amount.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
   };
 
-  const CHART_COLORS = ['hsl(var(--primary))', 'hsl(var(--destructive))', 'hsl(var(--muted))'];
+  const CHART_COLORS = ['hsl(var(--chart-1))', 'hsl(var(--chart-2))', 'hsl(var(--chart-3))'];
 
   const statCards = [
-    { title: 'Total Buses', value: stats.totalBuses, subtitle: `${stats.activeBuses} active`, icon: Bus, color: 'text-blue-600', bgColor: 'bg-blue-100' },
-    { title: 'Drivers', value: stats.totalDrivers, subtitle: 'Registered drivers', icon: Users, color: 'text-green-600', bgColor: 'bg-green-100' },
-    { title: 'Total Trips', value: stats.totalTrips, subtitle: `${stats.activeTrips} in progress`, icon: MapPin, color: 'text-purple-600', bgColor: 'bg-purple-100' },
-    { title: 'Pending Approvals', value: stats.pendingExpenses, subtitle: 'Expenses awaiting review', icon: Clock, color: 'text-orange-600', bgColor: 'bg-orange-100' },
+    { title: 'Total Buses', value: stats.totalBuses, subtitle: `${stats.activeBuses} active`, icon: Bus, color: 'text-primary', bgColor: 'bg-primary/10' },
+    { title: 'Drivers', value: stats.totalDrivers, subtitle: 'Registered drivers', icon: Users, color: 'text-success', bgColor: 'bg-success/10' },
+    { title: 'Total Trips', value: stats.totalTrips, subtitle: `${stats.activeTrips} in progress`, icon: MapPin, color: 'text-info', bgColor: 'bg-info/10' },
+    { title: 'Pending Approvals', value: stats.pendingExpenses, subtitle: 'Expenses awaiting review', icon: Clock, color: 'text-warning', bgColor: 'bg-warning/10' },
   ];
 
   return (
