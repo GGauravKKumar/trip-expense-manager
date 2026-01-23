@@ -320,6 +320,39 @@ export default function TripManagement() {
     e.preventDefault();
     setSubmitting(true);
 
+    // Validate odometer readings when completing a trip
+    if (formData.status === 'completed' && editingTrip) {
+      // Fetch current trip data to check odometer readings
+      const { data: currentTrip } = await supabase
+        .from('trips')
+        .select('odometer_start, odometer_end, distance_traveled, odometer_return_start, odometer_return_end, distance_return, trip_type')
+        .eq('id', editingTrip.id)
+        .single();
+
+      if (currentTrip) {
+        const hasOutwardOdometer = currentTrip.odometer_start !== null && 
+                                    currentTrip.odometer_end !== null && 
+                                    currentTrip.distance_traveled !== null;
+        
+        const isTwoWay = currentTrip.trip_type === 'two_way';
+        const hasReturnOdometer = currentTrip.odometer_return_start !== null && 
+                                   currentTrip.odometer_return_end !== null && 
+                                   currentTrip.distance_return !== null;
+
+        if (!hasOutwardOdometer) {
+          toast.error('Cannot complete trip: Outward odometer readings are required. Please ask the driver to fill in odometer readings first.');
+          setSubmitting(false);
+          return;
+        }
+
+        if (isTwoWay && !hasReturnOdometer) {
+          toast.error('Cannot complete trip: Return journey odometer readings are required for two-way trips.');
+          setSubmitting(false);
+          return;
+        }
+      }
+    }
+
     const payload = {
       trip_number: formData.trip_number,
       bus_id: formData.bus_id,
