@@ -69,20 +69,20 @@ export default function Sidebar() {
       {/* Sidebar */}
       <aside
         className={cn(
-          'fixed top-0 left-0 z-40 h-screen w-64 bg-card border-r transition-transform md:translate-x-0',
+          'fixed top-0 left-0 z-40 h-screen w-64 bg-sidebar text-sidebar-foreground border-r border-sidebar-border transition-transform md:translate-x-0',
           isMobileOpen ? 'translate-x-0' : '-translate-x-full'
         )}
       >
         <div className="flex flex-col h-full">
           {/* Header */}
-          <div className="p-6 border-b">
+          <div className="p-6 border-b border-sidebar-border">
             <div className="flex items-center gap-3">
-              <div className="p-2 bg-primary/10 rounded-lg">
-                <Bus className="h-6 w-6 text-primary" />
+              <div className="p-2 bg-sidebar-primary/20 rounded-lg">
+                <Bus className="h-6 w-6 text-sidebar-primary" />
               </div>
               <div>
-                <h2 className="font-semibold">Fleet Manager</h2>
-                <p className="text-xs text-muted-foreground capitalize">{userRole} Portal</p>
+                <h2 className="font-semibold text-sidebar-foreground">Fleet Manager</h2>
+                <p className="text-xs text-sidebar-foreground/60 capitalize">{userRole} Portal</p>
               </div>
             </div>
           </div>
@@ -98,10 +98,10 @@ export default function Sidebar() {
                   to={link.href}
                   onClick={() => setIsMobileOpen(false)}
                   className={cn(
-                    'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
+                    'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all',
                     isActive
-                      ? 'bg-primary text-primary-foreground'
-                      : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                      ? 'bg-sidebar-primary text-sidebar-primary-foreground shadow-md'
+                      : 'text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground'
                   )}
                 >
                   <Icon className="h-4 w-4" />
@@ -112,13 +112,13 @@ export default function Sidebar() {
           </nav>
 
           {/* Footer */}
-          <div className="p-4 border-t">
+          <div className="p-4 border-t border-sidebar-border">
             <div className="mb-3 px-3">
-              <p className="text-sm font-medium truncate">{user?.email}</p>
+              <p className="text-sm font-medium truncate text-sidebar-foreground/80">{user?.email}</p>
             </div>
             <Button
               variant="ghost"
-              className="w-full justify-start text-muted-foreground hover:text-foreground"
+              className="w-full justify-start text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent"
               onClick={handleSignOut}
             >
               <LogOut className="h-4 w-4 mr-3" />
