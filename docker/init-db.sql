@@ -1,98 +1,174 @@
-# Self-Hosting Guide - Fleet Manager
+-- Fleet Manager Database Initialization Script
+-- This script sets up the complete database schema for self-hosted deployment
 
-This guide explains how to run Fleet Manager **completely offline** on your own infrastructure.
+-- ===========================================
+-- EXTENSIONS
+-- ===========================================
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
-## Quick Start (One Command)
+-- ===========================================
+-- SCHEMAS
+-- ===========================================
+CREATE SCHEMA IF NOT EXISTS auth;
+CREATE SCHEMA IF NOT EXISTS storage;
+CREATE SCHEMA IF NOT EXISTS realtime;
 
-```bash
-# Clone/download the project, then:
-cp docker/.env.example .env
-# Edit .env with your secrets
-docker compose up -d
-```
+-- ===========================================
+-- ROLES
+-- ===========================================
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'anon') THEN
+        CREATE ROLE anon NOLOGIN NOINHERIT;
+    END IF;
+    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'authenticated') THEN
+        CREATE ROLE authenticated NOLOGIN NOINHERIT;
+    END IF;
+    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'service_role') THEN
+        CREATE ROLE service_role NOLOGIN NOINHERIT BYPASSRLS;
+    END IF;
+    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'supabase_auth_admin') THEN
+        CREATE ROLE supabase_auth_admin NOLOGIN NOINHERIT;
+    END IF;
+    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'supabase_storage_admin') THEN
+        CREATE ROLE supabase_storage_admin NOLOGIN NOINHERIT;
+    END IF;
+END
+$$;
 
-Access the app at:
-- **App**: http://localhost:5173
-- **API**: http://localhost:8000
-- **Studio (DB Admin)**: http://localhost:3000
+-- Grant schema permissions
+GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
+GRANT ALL ON SCHEMA auth TO supabase_auth_admin, service_role;
+GRANT ALL ON SCHEMA storage TO supabase_storage_admin, service_role;
 
----
+-- ===========================================
+-- AUTH SCHEMA (minimal for GoTrue)
+-- ===========================================
+CREATE TABLE IF NOT EXISTS auth.users (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    email text UNIQUE,
+    encrypted_password text,
+    email_confirmed_at timestamptz,
+    invited_at timestamptz,
+    confirmation_token text,
+    confirmation_sent_at timestamptz,
+    recovery_token text,
+    recovery_sent_at timestamptz,
+    email_change_token_new text,
+    email_change text,
+    email_change_sent_at timestamptz,
+    last_sign_in_at timestamptz,
+    raw_app_meta_data jsonb DEFAULT '{}'::jsonb,
+    raw_user_meta_data jsonb DEFAULT '{}'::jsonb,
+    is_super_admin boolean DEFAULT false,
+    created_at timestamptz DEFAULT now(),
+    updated_at timestamptz DEFAULT now(),
+    phone text UNIQUE,
+    phone_confirmed_at timestamptz,
+    phone_change text,
+    phone_change_token text,
+    phone_change_sent_at timestamptz,
+    confirmed_at timestamptz GENERATED ALWAYS AS (LEAST(email_confirmed_at, phone_confirmed_at)) STORED,
+    email_change_token_current text,
+    email_change_confirm_status smallint DEFAULT 0,
+    banned_until timestamptz,
+    reauthentication_token text,
+    reauthentication_sent_at timestamptz,
+    is_sso_user boolean DEFAULT false,
+    deleted_at timestamptz,
+    role text,
+    instance_id uuid,
+    aud text
+);
 
-## Prerequisites
+CREATE TABLE IF NOT EXISTS auth.refresh_tokens (
+    id bigserial PRIMARY KEY,
+    token text,
+    user_id uuid REFERENCES auth.users(id) ON DELETE CASCADE,
+    revoked boolean DEFAULT false,
+    created_at timestamptz DEFAULT now(),
+    updated_at timestamptz DEFAULT now(),
+    parent text,
+    session_id uuid
+);
 
-1. **Docker & Docker Compose** - For running all services
-2. **Git** - For cloning the repository (optional if using ZIP download)
+CREATE TABLE IF NOT EXISTS auth.sessions (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id uuid REFERENCES auth.users(id) ON DELETE CASCADE,
+    created_at timestamptz DEFAULT now(),
+    updated_at timestamptz DEFAULT now(),
+    factor_id uuid,
+    aal text,
+    not_after timestamptz,
+    refreshed_at timestamptz,
+    user_agent text,
+    ip text
+);
 
----
+-- Grant permissions
+GRANT ALL ON ALL TABLES IN SCHEMA auth TO supabase_auth_admin, service_role;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA auth TO supabase_auth_admin, service_role;
 
-## Step 1: Export/Clone the Code
+-- ===========================================
+-- STORAGE SCHEMA
+-- ===========================================
+CREATE TABLE IF NOT EXISTS storage.buckets (
+    id text PRIMARY KEY,
+    name text NOT NULL UNIQUE,
+    owner uuid REFERENCES auth.users(id),
+    created_at timestamptz DEFAULT now(),
+    updated_at timestamptz DEFAULT now(),
+    public boolean DEFAULT false,
+    avif_autodetection boolean DEFAULT false,
+    file_size_limit bigint,
+    allowed_mime_types text[]
+);
 
-Download or clone this project from Lovable:
-- Go to Project Settings → Export → Download ZIP
-- Or use GitHub integration to push to your repository
+CREATE TABLE IF NOT EXISTS storage.objects (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    bucket_id text REFERENCES storage.buckets(id),
+    name text,
+    owner uuid REFERENCES auth.users(id),
+    created_at timestamptz DEFAULT now(),
+    updated_at timestamptz DEFAULT now(),
+    last_accessed_at timestamptz DEFAULT now(),
+    metadata jsonb,
+    path_tokens text[] GENERATED ALWAYS AS (string_to_array(name, '/')) STORED,
+    version text,
+    owner_id text
+);
 
----
+-- Grant permissions
+GRANT ALL ON ALL TABLES IN SCHEMA storage TO supabase_storage_admin, service_role;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA storage TO supabase_storage_admin, service_role;
 
-## Step 2: Set Up Self-Hosted Supabase
+-- ===========================================
+-- PUBLIC SCHEMA - CUSTOM ENUMS
+-- ===========================================
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'app_role') THEN
+        CREATE TYPE public.app_role AS ENUM ('admin', 'driver');
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'bus_status') THEN
+        CREATE TYPE public.bus_status AS ENUM ('active', 'maintenance', 'inactive');
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'expense_status') THEN
+        CREATE TYPE public.expense_status AS ENUM ('pending', 'approved', 'denied');
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'trip_status') THEN
+        CREATE TYPE public.trip_status AS ENUM ('scheduled', 'in_progress', 'completed', 'cancelled');
+    END IF;
+END
+$$;
 
-### Option A: Using Docker (Recommended)
+-- ===========================================
+-- PUBLIC SCHEMA - TABLES
+-- ===========================================
 
-```bash
-# Clone Supabase Docker setup
-git clone --depth 1 https://github.com/supabase/supabase
-cd supabase/docker
-
-# Copy environment template
-cp .env.example .env
-
-# Generate new secrets (IMPORTANT for security!)
-# Edit .env and set:
-# - POSTGRES_PASSWORD (strong password)
-# - JWT_SECRET (min 32 chars)
-# - ANON_KEY (generate at https://supabase.com/docs/guides/self-hosting#api-keys)
-# - SERVICE_ROLE_KEY (generate at https://supabase.com/docs/guides/self-hosting#api-keys)
-
-# Start Supabase
-docker compose up -d
-```
-
-Supabase will be available at:
-- **API URL**: http://localhost:8000
-- **Studio (Dashboard)**: http://localhost:3000
-- **Database**: postgres://postgres:your-password@localhost:5432/postgres
-
-### Option B: Using Supabase CLI (Local Development)
-
-```bash
-# Install Supabase CLI
-npm install -g supabase
-
-# Initialize and start
-supabase init
-supabase start
-```
-
----
-
-## Step 3: Set Up the Database
-
-Run the following SQL in your Supabase SQL Editor (Studio → SQL Editor):
-
-### 3.1 Create Enums
-
-```sql
--- Create custom enums
-CREATE TYPE public.app_role AS ENUM ('admin', 'driver');
-CREATE TYPE public.bus_status AS ENUM ('active', 'maintenance', 'inactive');
-CREATE TYPE public.expense_status AS ENUM ('pending', 'approved', 'denied');
-CREATE TYPE public.trip_status AS ENUM ('scheduled', 'in_progress', 'completed', 'cancelled');
-```
-
-### 3.2 Create Tables
-
-```sql
 -- Buses table
-CREATE TABLE public.buses (
+CREATE TABLE IF NOT EXISTS public.buses (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     registration_number text NOT NULL,
     bus_name text,
@@ -107,7 +183,7 @@ CREATE TABLE public.buses (
 );
 
 -- Indian States table
-CREATE TABLE public.indian_states (
+CREATE TABLE IF NOT EXISTS public.indian_states (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     state_name text NOT NULL,
     state_code text NOT NULL,
@@ -116,7 +192,7 @@ CREATE TABLE public.indian_states (
 );
 
 -- Profiles table
-CREATE TABLE public.profiles (
+CREATE TABLE IF NOT EXISTS public.profiles (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id uuid NOT NULL UNIQUE,
     full_name text NOT NULL,
@@ -130,7 +206,7 @@ CREATE TABLE public.profiles (
 );
 
 -- User Roles table
-CREATE TABLE public.user_roles (
+CREATE TABLE IF NOT EXISTS public.user_roles (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id uuid NOT NULL,
     role app_role NOT NULL,
@@ -139,7 +215,7 @@ CREATE TABLE public.user_roles (
 );
 
 -- Routes table
-CREATE TABLE public.routes (
+CREATE TABLE IF NOT EXISTS public.routes (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     route_name text NOT NULL,
     from_state_id uuid NOT NULL REFERENCES indian_states(id),
@@ -153,7 +229,7 @@ CREATE TABLE public.routes (
 );
 
 -- Trips table
-CREATE TABLE public.trips (
+CREATE TABLE IF NOT EXISTS public.trips (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     trip_number text NOT NULL,
     bus_id uuid NOT NULL REFERENCES buses(id),
@@ -164,7 +240,6 @@ CREATE TABLE public.trips (
     status trip_status NOT NULL DEFAULT 'scheduled',
     trip_type text NOT NULL DEFAULT 'one_way',
     notes text,
-    -- Outward journey
     odometer_start numeric,
     odometer_end numeric,
     distance_traveled numeric,
@@ -174,7 +249,6 @@ CREATE TABLE public.trips (
     revenue_others numeric DEFAULT 0,
     total_revenue numeric,
     total_expense numeric DEFAULT 0,
-    -- Return journey
     odometer_return_start numeric,
     odometer_return_end numeric,
     distance_return numeric,
@@ -189,7 +263,7 @@ CREATE TABLE public.trips (
 );
 
 -- Expense Categories table
-CREATE TABLE public.expense_categories (
+CREATE TABLE IF NOT EXISTS public.expense_categories (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     name text NOT NULL,
     description text,
@@ -198,7 +272,7 @@ CREATE TABLE public.expense_categories (
 );
 
 -- Expenses table
-CREATE TABLE public.expenses (
+CREATE TABLE IF NOT EXISTS public.expenses (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     trip_id uuid NOT NULL REFERENCES trips(id),
     category_id uuid NOT NULL REFERENCES expense_categories(id),
@@ -216,7 +290,7 @@ CREATE TABLE public.expenses (
 );
 
 -- Notifications table
-CREATE TABLE public.notifications (
+CREATE TABLE IF NOT EXISTS public.notifications (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id uuid NOT NULL,
     title text NOT NULL,
@@ -226,11 +300,11 @@ CREATE TABLE public.notifications (
     link text,
     created_at timestamptz NOT NULL DEFAULT now()
 );
-```
 
-### 3.3 Create Database Functions
+-- ===========================================
+-- DATABASE FUNCTIONS
+-- ===========================================
 
-```sql
 -- Check if user has role
 CREATE OR REPLACE FUNCTION public.has_role(_user_id uuid, _role app_role)
 RETURNS boolean
@@ -297,25 +371,27 @@ BEGIN
     RETURN NEW;
 END;
 $$;
-```
 
-### 3.4 Create Triggers
+-- ===========================================
+-- TRIGGERS
+-- ===========================================
 
-```sql
 -- Auto-create profile on user signup
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
     AFTER INSERT ON auth.users
     FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
 -- Update expense total on status change
+DROP TRIGGER IF EXISTS update_expense_total ON public.expenses;
 CREATE TRIGGER update_expense_total
     AFTER UPDATE ON public.expenses
     FOR EACH ROW EXECUTE FUNCTION public.update_trip_total_expense();
-```
 
-### 3.5 Enable Row Level Security
+-- ===========================================
+-- ROW LEVEL SECURITY
+-- ===========================================
 
-```sql
 -- Enable RLS on all tables
 ALTER TABLE public.buses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
@@ -374,13 +450,18 @@ CREATE POLICY "Users can update their own notifications" ON public.notifications
 CREATE POLICY "Users can delete their own notifications" ON public.notifications FOR DELETE USING (user_id = auth.uid());
 CREATE POLICY "Service role can insert notifications" ON public.notifications FOR INSERT WITH CHECK (true);
 
--- Enable realtime for notifications
-ALTER PUBLICATION supabase_realtime ADD TABLE public.notifications;
-```
+-- ===========================================
+-- GRANT PERMISSIONS
+-- ===========================================
 
-### 3.6 Seed Initial Data
+GRANT ALL ON ALL TABLES IN SCHEMA public TO authenticated, service_role;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO authenticated, service_role;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO anon;
 
-```sql
+-- ===========================================
+-- SEED DATA
+-- ===========================================
+
 -- Insert default expense categories
 INSERT INTO public.expense_categories (name, description, icon) VALUES
     ('Fuel', 'Diesel or Petrol expenses', 'Fuel'),
@@ -389,7 +470,8 @@ INSERT INTO public.expense_categories (name, description, icon) VALUES
     ('Repair', 'Vehicle repairs and maintenance', 'Wrench'),
     ('Traffic Fine', 'Traffic violations and penalties', 'AlertTriangle'),
     ('Parking', 'Parking charges', 'ParkingCircle'),
-    ('Miscellaneous', 'Other expenses', 'MoreHorizontal');
+    ('Miscellaneous', 'Other expenses', 'MoreHorizontal')
+ON CONFLICT DO NOTHING;
 
 -- Insert Indian states
 INSERT INTO public.indian_states (state_name, state_code, is_union_territory) VALUES
@@ -428,144 +510,24 @@ INSERT INTO public.indian_states (state_name, state_code, is_union_territory) VA
     ('Puducherry', 'PY', true),
     ('Andaman and Nicobar', 'AN', true),
     ('Lakshadweep', 'LD', true),
-    ('Dadra Nagar Haveli and Daman Diu', 'DN', true);
-```
+    ('Dadra Nagar Haveli and Daman Diu', 'DN', true)
+ON CONFLICT DO NOTHING;
 
----
+-- Create storage bucket for expense documents
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('expense-documents', 'expense-documents', false)
+ON CONFLICT DO NOTHING;
 
-## Step 4: Create Storage Bucket
+-- Storage policies
+ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
 
-In Supabase Studio (http://localhost:3000):
-1. Go to Storage
-2. Create a new bucket named `expense-documents`
-3. Set it to private (not public)
-4. Add storage policies:
-
-```sql
--- Allow authenticated users to upload to their folder
 CREATE POLICY "Users can upload expense documents"
 ON storage.objects FOR INSERT
 WITH CHECK (bucket_id = 'expense-documents' AND auth.role() = 'authenticated');
 
--- Allow users to view their own documents
 CREATE POLICY "Users can view their expense documents"
 ON storage.objects FOR SELECT
 USING (bucket_id = 'expense-documents' AND auth.role() = 'authenticated');
-```
 
----
-
-## Step 5: Configure the Frontend
-
-### 5.1 Update Environment Variables
-
-Create or edit `.env` in the project root:
-
-```env
-VITE_SUPABASE_URL=http://localhost:8000
-VITE_SUPABASE_PUBLISHABLE_KEY=your-anon-key-here
-VITE_SUPABASE_PROJECT_ID=local
-```
-
-### 5.2 Update Supabase Client
-
-Edit `src/integrations/supabase/client.ts` if needed to use your local URL.
-
-### 5.3 Install Dependencies and Run
-
-```bash
-# Install dependencies
-npm install
-
-# Run development server
-npm run dev
-```
-
----
-
-## Step 6: Deploy Edge Functions (Optional)
-
-If you want to use edge functions locally:
-
-```bash
-# Deploy edge functions to local Supabase
-supabase functions serve
-
-# Or deploy specific function
-supabase functions serve check-trip-notifications
-supabase functions serve create-driver
-```
-
----
-
-## Step 7: Create Admin User
-
-1. Sign up through the app at http://localhost:5173/signup
-2. In Supabase Studio SQL Editor, promote the user to admin:
-
-```sql
--- Get your user ID from auth.users table first
-SELECT id, email FROM auth.users;
-
--- Insert admin role (replace USER_ID with actual ID)
-INSERT INTO public.user_roles (user_id, role) 
-VALUES ('YOUR_USER_ID_HERE', 'admin');
-```
-
----
-
-## Production Deployment
-
-For production self-hosting:
-
-1. **Use proper SSL certificates** - Never run without HTTPS in production
-2. **Set strong passwords** - Change all default passwords
-3. **Configure backups** - Set up PostgreSQL backups
-4. **Use reverse proxy** - Nginx or Traefik for load balancing
-5. **Monitor resources** - Set up monitoring and alerts
-
-### Docker Compose for Production
-
-```yaml
-version: '3.8'
-services:
-  frontend:
-    build: .
-    ports:
-      - "80:80"
-    environment:
-      - VITE_SUPABASE_URL=https://your-domain.com
-      - VITE_SUPABASE_PUBLISHABLE_KEY=your-anon-key
-    depends_on:
-      - supabase
-```
-
----
-
-## Troubleshooting
-
-### Common Issues
-
-1. **Connection refused**: Ensure Docker is running and Supabase is started
-2. **Authentication errors**: Verify JWT_SECRET and API keys match
-3. **RLS blocking access**: Check user roles in user_roles table
-4. **Edge functions not working**: Ensure Deno is installed for local functions
-
-### Logs
-
-```bash
-# View Supabase logs
-docker compose logs -f
-
-# View specific service logs
-docker compose logs -f postgres
-docker compose logs -f kong
-```
-
----
-
-## Support
-
-For issues with self-hosting:
-- [Supabase Self-Hosting Docs](https://supabase.com/docs/guides/self-hosting)
-- [Supabase GitHub Issues](https://github.com/supabase/supabase/issues)
+-- Enable realtime for notifications
+ALTER PUBLICATION supabase_realtime ADD TABLE public.notifications;

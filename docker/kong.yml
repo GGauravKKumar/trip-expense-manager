@@ -1,0 +1,102 @@
+_format_version: "2.1"
+_transform: true
+
+###
+### Consumers / Users
+###
+consumers:
+  - username: anon
+    keyauth_credentials:
+      - key: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1sb2NhbCIsInJvbGUiOiJhbm9uIiwiaWF0IjoxNjQ1MTkyODI0LCJleHAiOjE5NjA3Njg4MjR9.M5W6bBHF6e8hDSqwrO2hJGcOjYt7EEPsqoANnxh8mys
+  - username: service_role
+    keyauth_credentials:
+      - key: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1sb2NhbCIsInJvbGUiOiJzZXJ2aWNlX3JvbGUiLCJpYXQiOjE2NDUxOTI4MjQsImV4cCI6MTk2MDc2ODgyNH0.0dQ-vqfLYHGMSvqYiSfQNoAVnmv0KPdqS6TMxY4BYVI
+
+###
+### Access Control List
+###
+acls:
+  - consumer: anon
+    group: anon
+  - consumer: service_role
+    group: admin
+
+###
+### API Routes
+###
+services:
+  ## Auth Routes
+  - name: auth-v1
+    url: http://auth:9999/
+    routes:
+      - name: auth-v1-all
+        strip_path: true
+        paths:
+          - /auth/v1/
+    plugins:
+      - name: cors
+
+  ## REST Routes
+  - name: rest-v1
+    url: http://rest:3000/
+    routes:
+      - name: rest-v1-all
+        strip_path: true
+        paths:
+          - /rest/v1/
+    plugins:
+      - name: cors
+
+  ## Realtime Routes
+  - name: realtime-v1
+    url: http://realtime:4000/socket/
+    routes:
+      - name: realtime-v1-all
+        strip_path: true
+        paths:
+          - /realtime/v1/
+    plugins:
+      - name: cors
+
+  ## Storage Routes
+  - name: storage-v1
+    url: http://storage:5000/
+    routes:
+      - name: storage-v1-all
+        strip_path: true
+        paths:
+          - /storage/v1/
+    plugins:
+      - name: cors
+
+###
+### Plugins
+###
+plugins:
+  - name: cors
+    config:
+      origins:
+        - "*"
+      methods:
+        - GET
+        - HEAD
+        - PUT
+        - PATCH
+        - POST
+        - DELETE
+        - OPTIONS
+        - TRACE
+        - CONNECT
+      headers:
+        - Accept
+        - Accept-Encoding
+        - Authorization
+        - Content-Type
+        - apikey
+        - x-client-info
+      exposed_headers:
+        - Content-Length
+        - Content-Range
+        - Content-Type
+      credentials: true
+      max_age: 3600
