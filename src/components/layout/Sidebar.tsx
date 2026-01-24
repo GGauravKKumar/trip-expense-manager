@@ -15,6 +15,8 @@ import {
   X,
   TrendingUp,
   Settings,
+  Calendar,
+  Package,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useState } from 'react';
@@ -24,8 +26,10 @@ const adminLinks = [
   { href: '/admin/buses', label: 'Buses', icon: Bus },
   { href: '/admin/drivers', label: 'Drivers', icon: Users },
   { href: '/admin/routes', label: 'Routes', icon: Route },
+  { href: '/admin/schedules', label: 'Schedules', icon: Calendar },
   { href: '/admin/trips', label: 'Trips', icon: MapPin },
   { href: '/admin/expenses', label: 'Approve Expenses', icon: FileCheck },
+  { href: '/admin/stock', label: 'Stock', icon: Package },
   { href: '/admin/profitability', label: 'Profitability', icon: TrendingUp },
   { href: '/admin/settings', label: 'Settings', icon: Settings },
 ];

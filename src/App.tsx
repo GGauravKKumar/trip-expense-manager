@@ -12,8 +12,10 @@ import AdminDashboard from "@/pages/admin/AdminDashboard";
 import BusManagement from "@/pages/admin/BusManagement";
 import DriverManagement from "@/pages/admin/DriverManagement";
 import RouteManagement from "@/pages/admin/RouteManagement";
+import ScheduleManagement from "@/pages/admin/ScheduleManagement";
 import TripManagement from "@/pages/admin/TripManagement";
 import ExpenseApproval from "@/pages/admin/ExpenseApproval";
+import StockManagement from "@/pages/admin/StockManagement";
 import ProfitabilityReport from "@/pages/admin/ProfitabilityReport";
 import AdminSettings from "@/pages/admin/Settings";
 import DriverDashboard from "@/pages/driver/DriverDashboard";
@@ -41,8 +43,10 @@ const App = () => (
             <Route path="/admin/buses" element={<ProtectedRoute requiredRole="admin"><BusManagement /></ProtectedRoute>} />
             <Route path="/admin/drivers" element={<ProtectedRoute requiredRole="admin"><DriverManagement /></ProtectedRoute>} />
             <Route path="/admin/routes" element={<ProtectedRoute requiredRole="admin"><RouteManagement /></ProtectedRoute>} />
+            <Route path="/admin/schedules" element={<ProtectedRoute requiredRole="admin"><ScheduleManagement /></ProtectedRoute>} />
             <Route path="/admin/trips" element={<ProtectedRoute requiredRole="admin"><TripManagement /></ProtectedRoute>} />
             <Route path="/admin/expenses" element={<ProtectedRoute requiredRole="admin"><ExpenseApproval /></ProtectedRoute>} />
+            <Route path="/admin/stock" element={<ProtectedRoute requiredRole="admin"><StockManagement /></ProtectedRoute>} />
             <Route path="/admin/profitability" element={<ProtectedRoute requiredRole="admin"><ProfitabilityReport /></ProtectedRoute>} />
             <Route path="/admin/settings" element={<ProtectedRoute requiredRole="admin"><AdminSettings /></ProtectedRoute>} />
             {/* Driver Routes */}
