@@ -776,6 +776,7 @@ export type Database = {
           trip_number: string
           trip_type: string
           updated_at: string
+          water_taken: number | null
         }
         Insert: {
           arrival_time?: string | null
@@ -819,6 +820,7 @@ export type Database = {
           trip_number: string
           trip_type?: string
           updated_at?: string
+          water_taken?: number | null
         }
         Update: {
           arrival_time?: string | null
@@ -862,6 +864,7 @@ export type Database = {
           trip_number?: string
           trip_type?: string
           updated_at?: string
+          water_taken?: number | null
         }
         Relationships: [
           {
