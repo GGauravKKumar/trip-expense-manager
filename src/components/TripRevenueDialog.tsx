@@ -136,21 +136,13 @@ export default function TripRevenueDialog({ open, onOpenChange, trip, onSuccess 
 
     setSubmitting(true);
 
-    // Calculate totals
-    const outwardTotalValue =
-      (parseFloat(formData.revenue_cash) || 0) +
-      (parseFloat(formData.revenue_online) || 0) +
-      (parseFloat(formData.revenue_paytm) || 0) +
-      (parseFloat(formData.revenue_others) || 0) +
-      (parseFloat(formData.revenue_agent) || 0);
-
+    // Note: total_revenue is a generated column, so we don't include it in the update
     const updateData: Record<string, number> = {
       revenue_cash: parseFloat(formData.revenue_cash) || 0,
       revenue_online: parseFloat(formData.revenue_online) || 0,
       revenue_paytm: parseFloat(formData.revenue_paytm) || 0,
       revenue_others: parseFloat(formData.revenue_others) || 0,
       revenue_agent: parseFloat(formData.revenue_agent) || 0,
-      total_revenue: outwardTotalValue,
       gst_percentage: gstPercentage,
     };
 
