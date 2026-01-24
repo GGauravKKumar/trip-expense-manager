@@ -5,18 +5,24 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
-import { Loader2, TrendingUp, TrendingDown, Bus, Users, MapPin } from 'lucide-react';
-import { format, subMonths } from 'date-fns';
+import { Loader2, TrendingUp, TrendingDown, Bus, Users, MapPin, Handshake, Building2 } from 'lucide-react';
 
 interface BusProfitability {
   id: string;
   registration_number: string;
   bus_name: string | null;
+  ownership_type: 'owned' | 'partnership';
+  partner_name: string | null;
+  company_profit_share: number;
+  partner_profit_share: number;
   totalRevenue: number;
   totalExpense: number;
-  profit: number;
+  grossProfit: number;
+  companyProfit: number;
+  partnerProfit: number;
   tripCount: number;
   totalDistance: number;
+  totalDiesel: number;
   fuelEfficiency: number | null;
 }
 
@@ -45,7 +51,7 @@ export default function ProfitabilityReport() {
   const [busProfitability, setBusProfitability] = useState<BusProfitability[]>([]);
   const [driverProfitability, setDriverProfitability] = useState<DriverProfitability[]>([]);
   const [routeProfitability, setRouteProfitability] = useState<RouteProfitability[]>([]);
-  const [totals, setTotals] = useState({ revenue: 0, expense: 0, profit: 0 });
+  const [totals, setTotals] = useState({ revenue: 0, expense: 0, profit: 0, companyProfit: 0 });
 
   useEffect(() => {
     fetchProfitabilityData();
@@ -63,23 +69,24 @@ export default function ProfitabilityReport() {
     
     const fuelPricePerLiter = fuelSetting?.value ? parseFloat(fuelSetting.value) : 90;
 
-    // Fetch trips with related data
+    // Fetch trips with related data including bus ownership details
     const { data: trips } = await supabase
       .from('trips')
       .select(`
         *,
-        bus:buses(id, registration_number, bus_name),
+        bus:buses(id, registration_number, bus_name, ownership_type, partner_name, company_profit_share, partner_profit_share),
         driver:profiles(id, full_name),
         route:routes(id, route_name)
       `)
       .eq('status', 'completed');
 
-    // Fetch diesel expense category
-    const { data: dieselCategory } = await supabase
+    // Fetch fuel expense categories (diesel, fuel, petrol)
+    const { data: fuelCategories } = await supabase
       .from('expense_categories')
-      .select('id')
-      .ilike('name', '%diesel%')
-      .maybeSingle();
+      .select('id, name')
+      .or('name.ilike.%diesel%,name.ilike.%fuel%,name.ilike.%petrol%');
+
+    const fuelCategoryIds = new Set(fuelCategories?.map(c => c.id) || []);
 
     // Fetch approved expenses
     const { data: expenses } = await supabase
@@ -93,14 +100,14 @@ export default function ProfitabilityReport() {
     }
 
     // Create expense lookup by trip
-    const expensesByTrip: Record<string, { total: number; diesel: number }> = {};
+    const expensesByTrip: Record<string, { total: number; fuel: number }> = {};
     expenses?.forEach((exp) => {
       if (!expensesByTrip[exp.trip_id]) {
-        expensesByTrip[exp.trip_id] = { total: 0, diesel: 0 };
+        expensesByTrip[exp.trip_id] = { total: 0, fuel: 0 };
       }
       expensesByTrip[exp.trip_id].total += Number(exp.amount);
-      if (dieselCategory && exp.category_id === dieselCategory.id) {
-        expensesByTrip[exp.trip_id].diesel += Number(exp.amount);
+      if (fuelCategoryIds.has(exp.category_id)) {
+        expensesByTrip[exp.trip_id].fuel += Number(exp.amount);
       }
     });
 
@@ -111,6 +118,7 @@ export default function ProfitabilityReport() {
 
     let totalRevenue = 0;
     let totalExpense = 0;
+    let totalCompanyProfit = 0;
 
     trips.forEach((trip) => {
       const bus = trip.bus as any;
@@ -119,18 +127,38 @@ export default function ProfitabilityReport() {
       
       if (!bus?.id || !driver?.id || !route?.id) return;
 
-      // Calculate trip totals
-      const outwardRevenue = (Number(trip.revenue_cash) || 0) + (Number(trip.revenue_online) || 0) + 
-        (Number(trip.revenue_paytm) || 0) + (Number(trip.revenue_others) || 0);
-      const returnRevenue = (Number(trip.return_revenue_cash) || 0) + (Number(trip.return_revenue_online) || 0) + 
-        (Number(trip.return_revenue_paytm) || 0) + (Number(trip.return_revenue_others) || 0);
+      // Calculate trip totals including agent revenue
+      const outwardRevenue = 
+        (Number(trip.revenue_cash) || 0) + 
+        (Number(trip.revenue_online) || 0) + 
+        (Number(trip.revenue_paytm) || 0) + 
+        (Number(trip.revenue_agent) || 0) +
+        (Number(trip.revenue_others) || 0);
+      const returnRevenue = 
+        (Number(trip.return_revenue_cash) || 0) + 
+        (Number(trip.return_revenue_online) || 0) + 
+        (Number(trip.return_revenue_paytm) || 0) + 
+        (Number(trip.return_revenue_agent) || 0) +
+        (Number(trip.return_revenue_others) || 0);
       const tripRevenue = outwardRevenue + returnRevenue;
       const tripExpense = expensesByTrip[trip.id]?.total || 0;
-      const tripDiesel = expensesByTrip[trip.id]?.diesel || 0;
+      const tripFuel = expensesByTrip[trip.id]?.fuel || 0;
       const distance = (Number(trip.distance_traveled) || 0) + (Number(trip.distance_return) || 0);
+      const tripProfit = tripRevenue - tripExpense;
+
+      // Calculate company share based on ownership
+      const companyShare = bus.ownership_type === 'partnership' 
+        ? (bus.company_profit_share || 100) / 100 
+        : 1;
+      const partnerShare = bus.ownership_type === 'partnership' 
+        ? (bus.partner_profit_share || 0) / 100 
+        : 0;
+      const tripCompanyProfit = tripProfit * companyShare;
+      const tripPartnerProfit = tripProfit * partnerShare;
 
       totalRevenue += tripRevenue;
       totalExpense += tripExpense;
+      totalCompanyProfit += tripCompanyProfit;
 
       // Bus aggregation
       if (!busMap.has(bus.id)) {
@@ -138,28 +166,30 @@ export default function ProfitabilityReport() {
           id: bus.id,
           registration_number: bus.registration_number,
           bus_name: bus.bus_name,
+          ownership_type: bus.ownership_type || 'owned',
+          partner_name: bus.partner_name,
+          company_profit_share: bus.company_profit_share || 100,
+          partner_profit_share: bus.partner_profit_share || 0,
           totalRevenue: 0,
           totalExpense: 0,
-          profit: 0,
+          grossProfit: 0,
+          companyProfit: 0,
+          partnerProfit: 0,
           tripCount: 0,
           totalDistance: 0,
+          totalDiesel: 0,
           fuelEfficiency: null,
         });
       }
       const busData = busMap.get(bus.id)!;
       busData.totalRevenue += tripRevenue;
       busData.totalExpense += tripExpense;
-      busData.profit = busData.totalRevenue - busData.totalExpense;
+      busData.grossProfit = busData.totalRevenue - busData.totalExpense;
+      busData.companyProfit += tripCompanyProfit;
+      busData.partnerProfit += tripPartnerProfit;
       busData.tripCount += 1;
       busData.totalDistance += distance;
-      // Calculate fuel efficiency using dynamic fuel price
-      if (tripDiesel > 0 && distance > 0) {
-        const liters = tripDiesel / fuelPricePerLiter;
-        const currentFuelEfficiency = distance / liters;
-        busData.fuelEfficiency = busData.fuelEfficiency 
-          ? (busData.fuelEfficiency + currentFuelEfficiency) / 2 
-          : currentFuelEfficiency;
-      }
+      busData.totalDiesel += tripFuel;
 
       // Driver aggregation
       if (!driverMap.has(driver.id)) {
@@ -200,10 +230,23 @@ export default function ProfitabilityReport() {
       routeData.avgProfit = routeData.profit / routeData.tripCount;
     });
 
-    setBusProfitability(Array.from(busMap.values()).sort((a, b) => b.profit - a.profit));
+    // Calculate fuel efficiency for each bus after all trips are processed
+    busMap.forEach((busData) => {
+      if (busData.totalDiesel > 0 && busData.totalDistance > 0) {
+        const totalLiters = busData.totalDiesel / fuelPricePerLiter;
+        busData.fuelEfficiency = busData.totalDistance / totalLiters;
+      }
+    });
+
+    setBusProfitability(Array.from(busMap.values()).sort((a, b) => b.companyProfit - a.companyProfit));
     setDriverProfitability(Array.from(driverMap.values()).sort((a, b) => b.profit - a.profit));
     setRouteProfitability(Array.from(routeMap.values()).sort((a, b) => b.profit - a.profit));
-    setTotals({ revenue: totalRevenue, expense: totalExpense, profit: totalRevenue - totalExpense });
+    setTotals({ 
+      revenue: totalRevenue, 
+      expense: totalExpense, 
+      profit: totalRevenue - totalExpense,
+      companyProfit: totalCompanyProfit 
+    });
     setLoading(false);
   }
 
@@ -230,6 +273,23 @@ export default function ProfitabilityReport() {
     return <Badge variant="secondary">{formatCurrency(profit)}</Badge>;
   };
 
+  const getOwnershipBadge = (type: 'owned' | 'partnership', partnerName?: string | null) => {
+    if (type === 'partnership') {
+      return (
+        <Badge variant="outline" className="gap-1 text-purple-700 border-purple-300">
+          <Handshake className="h-3 w-3" />
+          {partnerName || 'Partner'}
+        </Badge>
+      );
+    }
+    return (
+      <Badge variant="outline" className="gap-1 text-blue-700 border-blue-300">
+        <Building2 className="h-3 w-3" />
+        Owned
+      </Badge>
+    );
+  };
+
   return (
     <DashboardLayout>
       <div className="space-y-6">
@@ -239,7 +299,7 @@ export default function ProfitabilityReport() {
         </div>
 
         {/* Summary Cards */}
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid gap-4 md:grid-cols-4">
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">Total Revenue</CardTitle>
@@ -262,12 +322,23 @@ export default function ProfitabilityReport() {
           </Card>
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Net Profit</CardTitle>
+              <CardTitle className="text-sm font-medium text-muted-foreground">Gross Profit</CardTitle>
             </CardHeader>
             <CardContent>
               <div className={`text-2xl font-bold ${totals.profit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                 {loading ? '...' : formatCurrency(totals.profit)}
               </div>
+            </CardContent>
+          </Card>
+          <Card className="border-primary">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Company Profit</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className={`text-2xl font-bold ${totals.companyProfit >= 0 ? 'text-primary' : 'text-red-600'}`}>
+                {loading ? '...' : formatCurrency(totals.companyProfit)}
+              </div>
+              <p className="text-xs text-muted-foreground">After partner shares</p>
             </CardContent>
           </Card>
         </div>
@@ -296,24 +367,26 @@ export default function ProfitabilityReport() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Bus</TableHead>
+                      <TableHead>Ownership</TableHead>
                       <TableHead className="text-right">Trips</TableHead>
                       <TableHead className="text-right">Distance</TableHead>
                       <TableHead className="text-right">Revenue</TableHead>
                       <TableHead className="text-right">Expense</TableHead>
                       <TableHead className="text-right">Fuel Eff.</TableHead>
-                      <TableHead className="text-right">Profit</TableHead>
+                      <TableHead className="text-right">Gross Profit</TableHead>
+                      <TableHead className="text-right">Company Share</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {loading ? (
                       <TableRow>
-                        <TableCell colSpan={7} className="text-center py-8">
+                        <TableCell colSpan={9} className="text-center py-8">
                           <Loader2 className="h-6 w-6 animate-spin mx-auto" />
                         </TableCell>
                       </TableRow>
                     ) : busProfitability.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                        <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
                           No completed trips found
                         </TableCell>
                       </TableRow>
@@ -324,6 +397,16 @@ export default function ProfitabilityReport() {
                             <div className="font-medium">{bus.registration_number}</div>
                             {bus.bus_name && <div className="text-sm text-muted-foreground">{bus.bus_name}</div>}
                           </TableCell>
+                          <TableCell>
+                            <div className="space-y-1">
+                              {getOwnershipBadge(bus.ownership_type, bus.partner_name)}
+                              {bus.ownership_type === 'partnership' && (
+                                <div className="text-xs text-muted-foreground">
+                                  {bus.company_profit_share}% / {bus.partner_profit_share}%
+                                </div>
+                              )}
+                            </div>
+                          </TableCell>
                           <TableCell className="text-right">{bus.tripCount}</TableCell>
                           <TableCell className="text-right">{bus.totalDistance.toLocaleString()} km</TableCell>
                           <TableCell className="text-right text-green-600">{formatCurrency(bus.totalRevenue)}</TableCell>
@@ -331,7 +414,17 @@ export default function ProfitabilityReport() {
                           <TableCell className="text-right">
                             {bus.fuelEfficiency ? `${bus.fuelEfficiency.toFixed(1)} km/L` : '-'}
                           </TableCell>
-                          <TableCell className="text-right">{getProfitBadge(bus.profit)}</TableCell>
+                          <TableCell className="text-right">{getProfitBadge(bus.grossProfit)}</TableCell>
+                          <TableCell className="text-right">
+                            <div className="font-semibold text-primary">
+                              {formatCurrency(bus.companyProfit)}
+                            </div>
+                            {bus.ownership_type === 'partnership' && bus.partnerProfit !== 0 && (
+                              <div className="text-xs text-muted-foreground">
+                                Partner: {formatCurrency(bus.partnerProfit)}
+                              </div>
+                            )}
+                          </TableCell>
                         </TableRow>
                       ))
                     )}
