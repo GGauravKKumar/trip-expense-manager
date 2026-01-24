@@ -51,6 +51,10 @@ export interface InvoiceLineItem {
   unit_price: number;
   amount: number;
   is_deduction: boolean;
+  gst_percentage: number;
+  rate_includes_gst: boolean;
+  base_amount: number;
+  gst_amount: number;
   created_at: string;
 }
 
@@ -139,26 +143,58 @@ export default function InvoiceManagement() {
     return matchesSearch && matchesStatus && matchesType;
   });
 
-  function exportToExcel() {
-    const exportData = filteredInvoices.map((inv) => ({
+  async function exportToExcel() {
+    // Fetch all line items for filtered invoices
+    const invoiceIds = filteredInvoices.map(inv => inv.id);
+    const { data: allLineItems } = await supabase
+      .from('invoice_line_items')
+      .select('*')
+      .in('invoice_id', invoiceIds);
+
+    // Create invoice summary sheet
+    const invoiceSummary = filteredInvoices.map((inv) => ({
       'Invoice Number': inv.invoice_number,
       'Date': format(new Date(inv.invoice_date), 'dd/MM/yyyy'),
       'Due Date': inv.due_date ? format(new Date(inv.due_date), 'dd/MM/yyyy') : '',
       'Customer': inv.customer_name,
+      'Customer GST': inv.customer_gst || '',
       'Type': inv.invoice_type,
-      'Subtotal': inv.subtotal,
-      'GST': inv.gst_amount,
-      'Total': inv.total_amount,
+      'Subtotal (Base)': inv.subtotal,
+      'Total GST': inv.gst_amount,
+      'Grand Total': inv.total_amount,
       'Paid': inv.amount_paid,
       'Balance': inv.balance_due,
       'Status': inv.status,
     }));
 
-    const ws = XLSX.utils.json_to_sheet(exportData);
+    // Create line items detail sheet
+    const lineItemsExport = (allLineItems || []).map((item: InvoiceLineItem) => {
+      const invoice = filteredInvoices.find(inv => inv.id === item.invoice_id);
+      return {
+        'Invoice Number': invoice?.invoice_number || '',
+        'Customer': invoice?.customer_name || '',
+        'Description': item.description,
+        'Quantity': item.quantity,
+        'Unit Rate': item.unit_price,
+        'Rate Includes GST': item.rate_includes_gst ? 'Yes' : 'No',
+        'GST %': item.gst_percentage,
+        'Base Amount': item.base_amount,
+        'GST Amount': item.gst_amount,
+        'Total Amount': item.amount,
+        'Is Deduction': item.is_deduction ? 'Yes' : 'No',
+      };
+    });
+
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Invoices');
+    
+    const ws1 = XLSX.utils.json_to_sheet(invoiceSummary);
+    XLSX.utils.book_append_sheet(wb, ws1, 'Invoice Summary');
+    
+    const ws2 = XLSX.utils.json_to_sheet(lineItemsExport);
+    XLSX.utils.book_append_sheet(wb, ws2, 'Line Items Detail');
+    
     XLSX.writeFile(wb, `Invoices_${format(new Date(), 'yyyyMMdd')}.xlsx`);
-    toast.success('Exported to Excel');
+    toast.success('Exported to Excel with GST details');
   }
 
   // Summary calculations

@@ -421,25 +421,40 @@ export default function InvoiceDialog({ open, onOpenChange, invoice, onSuccess }
                 <Loader2 className="h-6 w-6 animate-spin" />
               </div>
             ) : (
-              <div className="space-y-3">
+              <div className="space-y-4">
                 {lineItems.map((item, index) => {
                   const { baseAmount, gstAmount, totalAmount: lineTotal } = calculateLineItemAmounts(item);
                   return (
                     <div
                       key={index}
-                      className={`space-y-3 p-3 rounded-lg border ${item.is_deduction ? 'bg-destructive/5 border-destructive/20' : ''}`}
+                      className={`space-y-4 p-4 rounded-lg border ${item.is_deduction ? 'bg-destructive/5 border-destructive/20' : 'bg-muted/30'}`}
                     >
-                      <div className="grid gap-3 md:grid-cols-12 items-end">
-                        <div className="md:col-span-4 space-y-1">
-                          <Label className="text-xs">Description</Label>
+                      {/* Row 1: Description and Delete */}
+                      <div className="flex gap-3 items-start">
+                        <div className="flex-1 space-y-1.5">
+                          <Label className="text-xs font-medium">Description</Label>
                           <Input
                             value={item.description}
                             onChange={(e) => updateLineItem(index, 'description', e.target.value)}
-                            placeholder="Item description"
+                            placeholder="Enter item description"
                           />
                         </div>
-                        <div className="md:col-span-1 space-y-1">
-                          <Label className="text-xs">Qty</Label>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="mt-6"
+                          onClick={() => removeLineItem(index)}
+                          disabled={lineItems.length === 1}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+
+                      {/* Row 2: Qty, Rate, GST % */}
+                      <div className="grid grid-cols-3 gap-4">
+                        <div className="space-y-1.5">
+                          <Label className="text-xs font-medium">Quantity</Label>
                           <Input
                             type="number"
                             min="1"
@@ -447,8 +462,8 @@ export default function InvoiceDialog({ open, onOpenChange, invoice, onSuccess }
                             onChange={(e) => updateLineItem(index, 'quantity', parseFloat(e.target.value) || 1)}
                           />
                         </div>
-                        <div className="md:col-span-2 space-y-1">
-                          <Label className="text-xs">Rate (₹)</Label>
+                        <div className="space-y-1.5">
+                          <Label className="text-xs font-medium">Rate (₹)</Label>
                           <Input
                             type="number"
                             min="0"
@@ -457,8 +472,8 @@ export default function InvoiceDialog({ open, onOpenChange, invoice, onSuccess }
                             onChange={(e) => updateLineItem(index, 'unit_price', parseFloat(e.target.value) || 0)}
                           />
                         </div>
-                        <div className="md:col-span-1 space-y-1">
-                          <Label className="text-xs">GST %</Label>
+                        <div className="space-y-1.5">
+                          <Label className="text-xs font-medium">GST %</Label>
                           <Input
                             type="number"
                             min="0"
@@ -467,32 +482,17 @@ export default function InvoiceDialog({ open, onOpenChange, invoice, onSuccess }
                             onChange={(e) => updateLineItem(index, 'gst_percentage', parseFloat(e.target.value) || 0)}
                           />
                         </div>
-                        <div className="md:col-span-3 space-y-1">
-                          <Label className="text-xs">Amount (Base + GST)</Label>
-                          <div className={`p-2 text-sm font-medium ${item.is_deduction ? 'text-destructive' : ''}`}>
-                            {item.is_deduction ? '-' : ''}₹{baseAmount.toLocaleString('en-IN', { maximumFractionDigits: 2 })} + ₹{gstAmount.toLocaleString('en-IN', { maximumFractionDigits: 2 })} = ₹{lineTotal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
-                          </div>
-                        </div>
-                        <div className="md:col-span-1">
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => removeLineItem(index)}
-                            disabled={lineItems.length === 1}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
                       </div>
-                      <div className="flex flex-wrap items-center gap-4">
+
+                      {/* Row 3: Checkboxes */}
+                      <div className="flex flex-wrap items-center gap-6">
                         <div className="flex items-center gap-2">
                           <Checkbox
                             id={`gst-inclusive-${index}`}
                             checked={item.rate_includes_gst}
                             onCheckedChange={(checked) => updateLineItem(index, 'rate_includes_gst', !!checked)}
                           />
-                          <Label htmlFor={`gst-inclusive-${index}`} className="text-sm text-muted-foreground cursor-pointer">
+                          <Label htmlFor={`gst-inclusive-${index}`} className="text-sm cursor-pointer">
                             Rate includes GST
                           </Label>
                         </div>
@@ -502,9 +502,22 @@ export default function InvoiceDialog({ open, onOpenChange, invoice, onSuccess }
                             checked={item.is_deduction}
                             onCheckedChange={(checked) => updateLineItem(index, 'is_deduction', !!checked)}
                           />
-                          <Label htmlFor={`deduction-${index}`} className="text-sm text-muted-foreground cursor-pointer">
+                          <Label htmlFor={`deduction-${index}`} className="text-sm cursor-pointer">
                             This is a deduction
                           </Label>
+                        </div>
+                      </div>
+
+                      {/* Row 4: Amount breakdown */}
+                      <div className={`p-3 rounded-md bg-background border ${item.is_deduction ? 'border-destructive/30' : 'border-border'}`}>
+                        <div className="flex justify-between items-center text-sm">
+                          <span className="text-muted-foreground">Amount Breakdown:</span>
+                          <span className={`font-medium ${item.is_deduction ? 'text-destructive' : ''}`}>
+                            {item.is_deduction ? '- ' : ''}
+                            Base: ₹{baseAmount.toLocaleString('en-IN', { maximumFractionDigits: 2 })} + 
+                            GST: ₹{gstAmount.toLocaleString('en-IN', { maximumFractionDigits: 2 })} = 
+                            <span className="font-bold ml-1">₹{lineTotal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                          </span>
                         </div>
                       </div>
                     </div>

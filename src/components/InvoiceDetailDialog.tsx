@@ -154,7 +154,11 @@ export default function InvoiceDetailDialog({ invoice, open, onOpenChange, onEdi
                     <TableHead>Description</TableHead>
                     <TableHead className="text-right">Qty</TableHead>
                     <TableHead className="text-right">Rate</TableHead>
-                    <TableHead className="text-right">Amount</TableHead>
+                    <TableHead className="text-center">GST %</TableHead>
+                    <TableHead className="text-center">Incl. GST</TableHead>
+                    <TableHead className="text-right">Base</TableHead>
+                    <TableHead className="text-right">GST</TableHead>
+                    <TableHead className="text-right">Total</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -163,7 +167,15 @@ export default function InvoiceDetailDialog({ invoice, open, onOpenChange, onEdi
                       <TableCell>{item.description}</TableCell>
                       <TableCell className="text-right">{item.quantity}</TableCell>
                       <TableCell className="text-right">₹{item.unit_price.toLocaleString('en-IN')}</TableCell>
-                      <TableCell className="text-right">₹{item.amount.toLocaleString('en-IN')}</TableCell>
+                      <TableCell className="text-center">{item.gst_percentage}%</TableCell>
+                      <TableCell className="text-center">
+                        <Badge variant={item.rate_includes_gst ? 'default' : 'outline'} className="text-xs">
+                          {item.rate_includes_gst ? 'Yes' : 'No'}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-right">₹{item.base_amount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</TableCell>
+                      <TableCell className="text-right">₹{item.gst_amount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</TableCell>
+                      <TableCell className="text-right font-medium">₹{item.amount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -180,7 +192,11 @@ export default function InvoiceDetailDialog({ invoice, open, onOpenChange, onEdi
                       <TableHead>Description</TableHead>
                       <TableHead className="text-right">Qty</TableHead>
                       <TableHead className="text-right">Rate</TableHead>
-                      <TableHead className="text-right">Amount</TableHead>
+                      <TableHead className="text-center">GST %</TableHead>
+                      <TableHead className="text-center">Incl. GST</TableHead>
+                      <TableHead className="text-right">Base</TableHead>
+                      <TableHead className="text-right">GST</TableHead>
+                      <TableHead className="text-right">Total</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -189,7 +205,15 @@ export default function InvoiceDetailDialog({ invoice, open, onOpenChange, onEdi
                         <TableCell>{item.description}</TableCell>
                         <TableCell className="text-right">{item.quantity}</TableCell>
                         <TableCell className="text-right">₹{item.unit_price.toLocaleString('en-IN')}</TableCell>
-                        <TableCell className="text-right">-₹{item.amount.toLocaleString('en-IN')}</TableCell>
+                        <TableCell className="text-center">{item.gst_percentage}%</TableCell>
+                        <TableCell className="text-center">
+                          <Badge variant="outline" className="text-xs">
+                            {item.rate_includes_gst ? 'Yes' : 'No'}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right">-₹{item.base_amount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</TableCell>
+                        <TableCell className="text-right">-₹{item.gst_amount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</TableCell>
+                        <TableCell className="text-right font-medium">-₹{item.amount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
