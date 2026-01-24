@@ -1,1 +1,4 @@
 project_id = "gtkqpigwgrfsshmxnddc"
+
+[functions.create-repair-user]
+verify_jwt = false
