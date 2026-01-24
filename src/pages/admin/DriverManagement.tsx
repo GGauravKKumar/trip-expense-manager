@@ -245,30 +245,32 @@ export default function DriverManagement() {
   async function handleDeleteDriver(driver: DriverWithRole) {
     setDeletingDriver(driver);
     
-    // Check if driver has related trips
-    const { count: tripsCount, error: tripsError } = await supabase
+    // Check if driver has active (non-completed) trips
+    const { count: activeTrips, error: activeError } = await supabase
       .from('trips')
       .select('*', { count: 'exact', head: true })
-      .eq('driver_id', driver.id);
+      .eq('driver_id', driver.id)
+      .neq('status', 'completed');
 
-    if (tripsError) {
+    if (activeError) {
       toast.error('Failed to check driver dependencies');
       return;
     }
 
-    // Check if driver has submitted expenses
-    const { count: expensesCount, error: expensesError } = await supabase
+    // Check if driver has pending expenses
+    const { count: pendingExpenses, error: expensesError } = await supabase
       .from('expenses')
       .select('*', { count: 'exact', head: true })
-      .eq('submitted_by', driver.id);
+      .eq('submitted_by', driver.id)
+      .eq('status', 'pending');
 
     if (expensesError) {
       toast.error('Failed to check driver dependencies');
       return;
     }
 
-    const trips = tripsCount || 0;
-    const expenses = expensesCount || 0;
+    const trips = activeTrips || 0;
+    const expenses = pendingExpenses || 0;
 
     setRelatedDataInfo({ trips, expenses });
     setHasRelatedData(trips > 0 || expenses > 0);
@@ -280,7 +282,19 @@ export default function DriverManagement() {
 
     setDeleting(true);
 
-    // First, delete from user_roles
+    // First, update all trips with this driver to store the driver name snapshot
+    const { error: snapshotError } = await supabase
+      .from('trips')
+      .update({ driver_name_snapshot: deletingDriver.full_name })
+      .eq('driver_id', deletingDriver.id);
+
+    if (snapshotError) {
+      toast.error('Failed to preserve trip history');
+      setDeleting(false);
+      return;
+    }
+
+    // Delete from user_roles
     const { error: roleError } = await supabase
       .from('user_roles')
       .delete()
@@ -633,20 +647,21 @@ export default function DriverManagement() {
                 {hasRelatedData ? 'Cannot Delete Driver' : 'Delete Driver'}
               </AlertDialogTitle>
               <AlertDialogDescription>
-                {hasRelatedData ? (
+              {hasRelatedData ? (
                   <>
-                    This driver <strong>"{deletingDriver?.full_name}"</strong> has associated data 
+                    This driver <strong>"{deletingDriver?.full_name}"</strong> has active data 
                     and cannot be deleted:
                     <ul className="list-disc list-inside mt-2">
-                      {relatedDataInfo.trips > 0 && <li>{relatedDataInfo.trips} trip(s)</li>}
-                      {relatedDataInfo.expenses > 0 && <li>{relatedDataInfo.expenses} expense(s)</li>}
+                      {relatedDataInfo.trips > 0 && <li>{relatedDataInfo.trips} active trip(s) (not completed)</li>}
+                      {relatedDataInfo.expenses > 0 && <li>{relatedDataInfo.expenses} pending expense(s)</li>}
                     </ul>
-                    <p className="mt-2">Please remove or reassign this data first.</p>
+                    <p className="mt-2">Please complete trips and approve/deny pending expenses first.</p>
                   </>
                 ) : (
                   <>
                     Are you sure you want to delete driver <strong>"{deletingDriver?.full_name}"</strong>? 
-                    This will also remove their role assignment. This action cannot be undone.
+                    Historical trip records and expenses will be preserved with the driver name.
+                    This action cannot be undone.
                   </>
                 )}
               </AlertDialogDescription>
