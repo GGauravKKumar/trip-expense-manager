@@ -735,9 +735,11 @@ export type Database = {
       }
       trips: {
         Row: {
+          arrival_time: string | null
           bus_id: string | null
           bus_name_snapshot: string | null
           created_at: string
+          departure_time: string | null
           distance_return: number | null
           distance_traveled: number | null
           driver_id: string | null
@@ -750,6 +752,8 @@ export type Database = {
           odometer_return_end: number | null
           odometer_return_start: number | null
           odometer_start: number | null
+          return_arrival_time: string | null
+          return_departure_time: string | null
           return_revenue_agent: number | null
           return_revenue_cash: number | null
           return_revenue_online: number | null
@@ -763,18 +767,22 @@ export type Database = {
           revenue_others: number | null
           revenue_paytm: number | null
           route_id: string
+          schedule_id: string | null
           start_date: string
           status: Database["public"]["Enums"]["trip_status"]
           total_expense: number | null
           total_revenue: number | null
+          trip_date: string | null
           trip_number: string
           trip_type: string
           updated_at: string
         }
         Insert: {
+          arrival_time?: string | null
           bus_id?: string | null
           bus_name_snapshot?: string | null
           created_at?: string
+          departure_time?: string | null
           distance_return?: number | null
           distance_traveled?: number | null
           driver_id?: string | null
@@ -787,6 +795,8 @@ export type Database = {
           odometer_return_end?: number | null
           odometer_return_start?: number | null
           odometer_start?: number | null
+          return_arrival_time?: string | null
+          return_departure_time?: string | null
           return_revenue_agent?: number | null
           return_revenue_cash?: number | null
           return_revenue_online?: number | null
@@ -800,18 +810,22 @@ export type Database = {
           revenue_others?: number | null
           revenue_paytm?: number | null
           route_id: string
+          schedule_id?: string | null
           start_date: string
           status?: Database["public"]["Enums"]["trip_status"]
           total_expense?: number | null
           total_revenue?: number | null
+          trip_date?: string | null
           trip_number: string
           trip_type?: string
           updated_at?: string
         }
         Update: {
+          arrival_time?: string | null
           bus_id?: string | null
           bus_name_snapshot?: string | null
           created_at?: string
+          departure_time?: string | null
           distance_return?: number | null
           distance_traveled?: number | null
           driver_id?: string | null
@@ -824,6 +838,8 @@ export type Database = {
           odometer_return_end?: number | null
           odometer_return_start?: number | null
           odometer_start?: number | null
+          return_arrival_time?: string | null
+          return_departure_time?: string | null
           return_revenue_agent?: number | null
           return_revenue_cash?: number | null
           return_revenue_online?: number | null
@@ -837,10 +853,12 @@ export type Database = {
           revenue_others?: number | null
           revenue_paytm?: number | null
           route_id?: string
+          schedule_id?: string | null
           start_date?: string
           status?: Database["public"]["Enums"]["trip_status"]
           total_expense?: number | null
           total_revenue?: number | null
+          trip_date?: string | null
           trip_number?: string
           trip_type?: string
           updated_at?: string
@@ -865,6 +883,13 @@ export type Database = {
             columns: ["route_id"]
             isOneToOne: false
             referencedRelation: "routes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trips_schedule_id_fkey"
+            columns: ["schedule_id"]
+            isOneToOne: false
+            referencedRelation: "bus_schedules"
             referencedColumns: ["id"]
           },
         ]
