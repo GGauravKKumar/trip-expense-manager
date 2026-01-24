@@ -90,7 +90,17 @@ serve(async (req) => {
 
         // Create the main trip
         const tripNumber = generateTripNumber();
-        const tripData: any = {
+        
+        // Create start_date from today + departure time
+        const [depHour, depMin] = departureTime.split(":").map(Number);
+        const startDate = new Date(today);
+        startDate.setHours(depHour, depMin, 0, 0);
+        
+        // Get bus and driver names for snapshot
+        const busName = schedule.buses?.bus_name || schedule.buses?.registration_number || "";
+        const driverName = schedule.profiles?.full_name || "";
+        
+        const tripData: Record<string, unknown> = {
           trip_number: tripNumber,
           bus_id: schedule.bus_id,
           driver_id: schedule.driver_id,
@@ -99,8 +109,11 @@ serve(async (req) => {
           trip_date: todayDateStr,
           departure_time: departureTime,
           arrival_time: arrivalTime,
+          start_date: startDate.toISOString(),
           status: "scheduled",
-          is_two_way: schedule.is_two_way,
+          trip_type: schedule.is_two_way ? "two_way" : "one_way",
+          bus_name_snapshot: busName,
+          driver_name_snapshot: driverName,
         };
 
         // Add return journey details if two-way
