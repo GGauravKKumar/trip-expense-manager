@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { Trip, TripStatus, StockItem } from '@/types/database';
-import { Loader2, Gauge, ArrowRight, ArrowLeft, Droplets } from 'lucide-react';
+import { Loader2, Gauge, ArrowRight, ArrowLeft, Droplets, Play, CheckCircle } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function DriverTrips() {
@@ -248,6 +248,67 @@ export default function DriverTrips() {
     return status === 'in_progress' || status === 'scheduled';
   };
 
+  const canStartTrip = (trip: Trip) => {
+    return trip.status === 'scheduled';
+  };
+
+  const canCompleteTrip = (trip: Trip) => {
+    if (trip.status !== 'in_progress') return false;
+    
+    // Check if odometer readings are complete
+    const hasOutwardReadings = trip.odometer_start && trip.odometer_end;
+    if (!hasOutwardReadings) return false;
+    
+    // For two-way trips, also check return readings
+    if (trip.trip_type === 'two_way') {
+      return trip.odometer_return_start && trip.odometer_return_end;
+    }
+    
+    return true;
+  };
+
+  async function handleStartTrip(trip: Trip) {
+    const { error } = await supabase
+      .from('trips')
+      .update({ status: 'in_progress' })
+      .eq('id', trip.id);
+
+    if (error) {
+      toast.error('Failed to start trip');
+    } else {
+      toast.success('Trip started successfully');
+      fetchTrips();
+    }
+  }
+
+  async function handleCompleteTrip(trip: Trip) {
+    // Validate odometer readings before completing
+    if (!trip.odometer_start || !trip.odometer_end) {
+      toast.error('Please enter odometer readings before completing the trip');
+      return;
+    }
+
+    if (trip.trip_type === 'two_way' && (!trip.odometer_return_start || !trip.odometer_return_end)) {
+      toast.error('Please enter return journey odometer readings before completing the trip');
+      return;
+    }
+
+    const { error } = await supabase
+      .from('trips')
+      .update({ 
+        status: 'completed',
+        end_date: new Date().toISOString()
+      })
+      .eq('id', trip.id);
+
+    if (error) {
+      toast.error('Failed to complete trip');
+    } else {
+      toast.success('Trip completed successfully');
+      fetchTrips();
+    }
+  }
+
   const calculateDistance = (start: string, end: string) => {
     const s = parseFloat(start);
     const e = parseFloat(end);
@@ -358,12 +419,32 @@ export default function DriverTrips() {
                           )}
                         </TableCell>
                         <TableCell>
-                          {canEditOdometer(t.status) && (
-                            <Button size="sm" variant="outline" onClick={() => handleUpdateOdometer(t)}>
-                              <Gauge className="h-4 w-4 mr-1" />
-                              Odometer
-                            </Button>
-                          )}
+                          <div className="flex items-center gap-2">
+                            {canStartTrip(t) && (
+                              <Button size="sm" variant="default" onClick={() => handleStartTrip(t)}>
+                                <Play className="h-4 w-4 mr-1" />
+                                Start
+                              </Button>
+                            )}
+                            {canEditOdometer(t.status) && (
+                              <Button size="sm" variant="outline" onClick={() => handleUpdateOdometer(t)}>
+                                <Gauge className="h-4 w-4 mr-1" />
+                                Odometer
+                              </Button>
+                            )}
+                            {t.status === 'in_progress' && (
+                              <Button 
+                                size="sm" 
+                                variant={canCompleteTrip(t) ? "default" : "outline"}
+                                onClick={() => handleCompleteTrip(t)}
+                                disabled={!canCompleteTrip(t)}
+                                title={!canCompleteTrip(t) ? "Complete all odometer readings first" : "Mark trip as completed"}
+                              >
+                                <CheckCircle className="h-4 w-4 mr-1" />
+                                Complete
+                              </Button>
+                            )}
+                          </div>
                         </TableCell>
                       </TableRow>
                     );
