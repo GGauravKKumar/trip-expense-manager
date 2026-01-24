@@ -279,6 +279,7 @@ export type Database = {
           description: string | null
           document_url: string | null
           expense_date: string
+          fuel_quantity: number | null
           id: string
           status: Database["public"]["Enums"]["expense_status"]
           submitted_by: string
@@ -295,6 +296,7 @@ export type Database = {
           description?: string | null
           document_url?: string | null
           expense_date?: string
+          fuel_quantity?: number | null
           id?: string
           status?: Database["public"]["Enums"]["expense_status"]
           submitted_by: string
@@ -311,6 +313,7 @@ export type Database = {
           description?: string | null
           document_url?: string | null
           expense_date?: string
+          fuel_quantity?: number | null
           id?: string
           status?: Database["public"]["Enums"]["expense_status"]
           submitted_by?: string

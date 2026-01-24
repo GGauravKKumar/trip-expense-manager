@@ -25,7 +25,20 @@ export default function DriverExpenses() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [file, setFile] = useState<File | null>(null);
-  const [formData, setFormData] = useState({ trip_id: '', category_id: '', amount: '', expense_date: new Date().toISOString().split('T')[0], description: '' });
+  const [formData, setFormData] = useState({ 
+    trip_id: '', 
+    category_id: '', 
+    amount: '', 
+    expense_date: new Date().toISOString().split('T')[0], 
+    description: '',
+    fuel_quantity: ''
+  });
+
+  // Check if selected category is fuel-related
+  const selectedCategory = categories.find(c => c.id === formData.category_id);
+  const isFuelCategory = selectedCategory?.name?.toLowerCase().includes('diesel') || 
+                         selectedCategory?.name?.toLowerCase().includes('fuel') || 
+                         selectedCategory?.name?.toLowerCase().includes('petrol');
 
   useEffect(() => { if (user) init(); }, [user]);
 
@@ -39,7 +52,7 @@ export default function DriverExpenses() {
       supabase.from('trips').select('*').eq('driver_id', profile.id).eq('status', 'in_progress'),
       supabase.from('expense_categories').select('*'),
     ]);
-    setExpenses(exp as Expense[] || []);
+    setExpenses((exp || []) as unknown as Expense[]);
     setTrips(trp as Trip[] || []);
     setCategories(cat as ExpenseCategory[] || []);
     setLoading(false);
@@ -63,10 +76,11 @@ export default function DriverExpenses() {
       trip_id: formData.trip_id, category_id: formData.category_id, submitted_by: profileId,
       amount: parseFloat(formData.amount), expense_date: formData.expense_date,
       description: formData.description || null, document_url: documentUrl,
+      fuel_quantity: isFuelCategory && formData.fuel_quantity ? parseFloat(formData.fuel_quantity) : null,
     });
 
     if (error) toast.error('Failed to submit expense');
-    else { toast.success('Expense submitted for approval'); setDialogOpen(false); setFile(null); setFormData({ trip_id: '', category_id: '', amount: '', expense_date: new Date().toISOString().split('T')[0], description: '' }); init(); }
+    else { toast.success('Expense submitted for approval'); setDialogOpen(false); setFile(null); setFormData({ trip_id: '', category_id: '', amount: '', expense_date: new Date().toISOString().split('T')[0], description: '', fuel_quantity: '' }); init(); }
     setSubmitting(false);
   }
 
@@ -87,6 +101,20 @@ export default function DriverExpenses() {
                   <div className="space-y-2"><Label>Category *</Label><Select value={formData.category_id} onValueChange={v => setFormData({...formData, category_id: v})}><SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger><SelectContent>{categories.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent></Select></div>
                   <div className="space-y-2"><Label>Amount (₹) *</Label><Input type="number" step="0.01" value={formData.amount} onChange={e => setFormData({...formData, amount: e.target.value})} required /></div>
                 </div>
+                {isFuelCategory && (
+                  <div className="space-y-2">
+                    <Label>Fuel Quantity (Liters) *</Label>
+                    <Input 
+                      type="number" 
+                      step="0.01" 
+                      placeholder="e.g. 50" 
+                      value={formData.fuel_quantity} 
+                      onChange={e => setFormData({...formData, fuel_quantity: e.target.value})} 
+                      required 
+                    />
+                    <p className="text-xs text-muted-foreground">Enter the quantity of fuel filled</p>
+                  </div>
+                )}
                 <div className="space-y-2"><Label>Date *</Label><Input type="date" value={formData.expense_date} onChange={e => setFormData({...formData, expense_date: e.target.value})} required /></div>
                 <div className="space-y-2"><Label>Description</Label><Textarea value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} /></div>
                 <div className="space-y-2"><Label>Upload Bill/Receipt</Label><div className="flex items-center gap-2"><Input type="file" accept="image/*,.pdf" onChange={e => setFile(e.target.files?.[0] || null)} />{file && <span className="text-sm text-muted-foreground">{file.name}</span>}</div></div>

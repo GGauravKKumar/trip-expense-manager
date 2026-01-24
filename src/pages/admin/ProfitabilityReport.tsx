@@ -88,10 +88,10 @@ export default function ProfitabilityReport() {
 
     const fuelCategoryIds = new Set(fuelCategories?.map(c => c.id) || []);
 
-    // Fetch approved expenses
+    // Fetch approved expenses including fuel_quantity
     const { data: expenses } = await supabase
       .from('expenses')
-      .select('trip_id, amount, category_id')
+      .select('trip_id, amount, category_id, fuel_quantity')
       .eq('status', 'approved');
 
     if (!trips) {
@@ -99,15 +99,22 @@ export default function ProfitabilityReport() {
       return;
     }
 
-    // Create expense lookup by trip
-    const expensesByTrip: Record<string, { total: number; fuel: number }> = {};
+    // Create expense lookup by trip (with actual fuel liters)
+    const expensesByTrip: Record<string, { total: number; fuel: number; fuelLiters: number }> = {};
     expenses?.forEach((exp) => {
       if (!expensesByTrip[exp.trip_id]) {
-        expensesByTrip[exp.trip_id] = { total: 0, fuel: 0 };
+        expensesByTrip[exp.trip_id] = { total: 0, fuel: 0, fuelLiters: 0 };
       }
       expensesByTrip[exp.trip_id].total += Number(exp.amount);
       if (fuelCategoryIds.has(exp.category_id)) {
         expensesByTrip[exp.trip_id].fuel += Number(exp.amount);
+        // Use actual fuel quantity if available, otherwise estimate from price
+        if (exp.fuel_quantity) {
+          expensesByTrip[exp.trip_id].fuelLiters += Number(exp.fuel_quantity);
+        } else {
+          // Fallback: estimate from cost
+          expensesByTrip[exp.trip_id].fuelLiters += Number(exp.amount) / fuelPricePerLiter;
+        }
       }
     });
 
@@ -142,7 +149,7 @@ export default function ProfitabilityReport() {
         (Number(trip.return_revenue_others) || 0);
       const tripRevenue = outwardRevenue + returnRevenue;
       const tripExpense = expensesByTrip[trip.id]?.total || 0;
-      const tripFuel = expensesByTrip[trip.id]?.fuel || 0;
+      const tripFuelLiters = expensesByTrip[trip.id]?.fuelLiters || 0;
       const distance = (Number(trip.distance_traveled) || 0) + (Number(trip.distance_return) || 0);
       const tripProfit = tripRevenue - tripExpense;
 
@@ -189,7 +196,7 @@ export default function ProfitabilityReport() {
       busData.partnerProfit += tripPartnerProfit;
       busData.tripCount += 1;
       busData.totalDistance += distance;
-      busData.totalDiesel += tripFuel;
+      busData.totalDiesel += tripFuelLiters;
 
       // Driver aggregation
       if (!driverMap.has(driver.id)) {
@@ -230,11 +237,11 @@ export default function ProfitabilityReport() {
       routeData.avgProfit = routeData.profit / routeData.tripCount;
     });
 
-    // Calculate fuel efficiency for each bus after all trips are processed
+    // Calculate fuel efficiency for each bus (now using actual liters)
     busMap.forEach((busData) => {
       if (busData.totalDiesel > 0 && busData.totalDistance > 0) {
-        const totalLiters = busData.totalDiesel / fuelPricePerLiter;
-        busData.fuelEfficiency = busData.totalDistance / totalLiters;
+        // totalDiesel is now in liters (actual or estimated)
+        busData.fuelEfficiency = busData.totalDistance / busData.totalDiesel;
       }
     });
 
