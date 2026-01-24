@@ -1,571 +1,369 @@
 # Self-Hosting Guide - Fleet Manager
 
-This guide explains how to run Fleet Manager **completely offline** on your own infrastructure.
+This guide explains how to run Fleet Manager **completely offline** on your own infrastructure using Docker.
 
 ## Quick Start (One Command)
 
 ```bash
-# Clone/download the project, then:
+# 1. Copy environment template
 cp docker/.env.example .env
-# Edit .env with your secrets
+
+# 2. Edit .env with your secrets (IMPORTANT!)
+nano .env  # or use any editor
+
+# 3. Start all services
 docker compose up -d
 ```
 
-Access the app at:
-- **App**: http://localhost:5173
-- **API**: http://localhost:8000
-- **Studio (DB Admin)**: http://localhost:3000
+**Access Points:**
+| Service | URL | Description |
+|---------|-----|-------------|
+| **App** | http://localhost:5173 | Fleet Manager Frontend |
+| **API** | http://localhost:8000 | Supabase API Gateway |
+| **Studio** | http://localhost:3000 | Database Admin UI |
+| **Database** | localhost:5432 | PostgreSQL |
 
 ---
 
 ## Prerequisites
 
-1. **Docker & Docker Compose** - For running all services
-2. **Git** - For cloning the repository (optional if using ZIP download)
+- **Docker & Docker Compose v2+** - [Install Docker](https://docs.docker.com/get-docker/)
+- **4GB+ RAM** recommended for all services
+- **10GB+ disk space** for Docker images and data
 
 ---
 
-## Step 1: Export/Clone the Code
+## Step-by-Step Setup
 
-Download or clone this project from Lovable:
-- Go to Project Settings → Export → Download ZIP
-- Or use GitHub integration to push to your repository
+### Step 1: Get the Code
 
----
+Download from Lovable:
+- Go to **Project Settings → Export → Download ZIP**
+- Or use GitHub integration
 
-## Step 2: Set Up Self-Hosted Supabase
-
-### Option A: Using Docker (Recommended)
+### Step 2: Configure Environment
 
 ```bash
-# Clone Supabase Docker setup
-git clone --depth 1 https://github.com/supabase/supabase
-cd supabase/docker
+# Copy the example environment file
+cp docker/.env.example .env
+```
 
-# Copy environment template
-cp .env.example .env
+Edit `.env` and set secure values:
 
-# Generate new secrets (IMPORTANT for security!)
-# Edit .env and set:
-# - POSTGRES_PASSWORD (strong password)
-# - JWT_SECRET (min 32 chars)
-# - ANON_KEY (generate at https://supabase.com/docs/guides/self-hosting#api-keys)
-# - SERVICE_ROLE_KEY (generate at https://supabase.com/docs/guides/self-hosting#api-keys)
+```env
+# REQUIRED: Change these for security!
+POSTGRES_PASSWORD=your-super-secret-password-change-me
+JWT_SECRET=your-super-secret-jwt-token-with-at-least-32-characters-long
 
-# Start Supabase
+# Keep these default for local development, or generate new ones for production
+ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+
+# URLs - update if not running on localhost
+API_EXTERNAL_URL=http://localhost:8000
+SITE_URL=http://localhost:5173
+```
+
+> **⚠️ Production:** Generate new API keys at [supabase.com/docs/guides/self-hosting#api-keys](https://supabase.com/docs/guides/self-hosting#api-keys)
+
+### Step 3: Start Services
+
+```bash
 docker compose up -d
 ```
 
-Supabase will be available at:
-- **API URL**: http://localhost:8000
-- **Studio (Dashboard)**: http://localhost:3000
-- **Database**: postgres://postgres:your-password@localhost:5432/postgres
+Wait for all services to be healthy:
+```bash
+docker compose ps
+```
 
-### Option B: Using Supabase CLI (Local Development)
+### Step 4: Create Admin User
+
+Connect to the database and create your first admin:
 
 ```bash
-# Install Supabase CLI
-npm install -g supabase
+# Option A: Using psql
+docker exec -it fleet-db psql -U postgres -c \
+  "SELECT create_user_with_role('admin@yourcompany.com', 'YourSecurePassword123', 'Admin Name', 'admin');"
 
-# Initialize and start
-supabase init
-supabase start
+# Option B: Using Studio
+# 1. Go to http://localhost:3000
+# 2. Navigate to SQL Editor
+# 3. Run: SELECT create_user_with_role('admin@yourcompany.com', 'YourSecurePassword123', 'Admin Name', 'admin');
+```
+
+### Step 5: Login
+
+1. Go to http://localhost:5173
+2. Login with the admin credentials you created
+3. Start managing your fleet!
+
+---
+
+## Creating Users
+
+### Create Driver
+
+```sql
+SELECT create_user_with_role(
+  'driver@example.com',      -- email
+  'DriverPassword123',       -- password
+  'Driver Name',             -- full name
+  'driver',                  -- role
+  '9876543210',             -- phone (optional)
+  'DL1234567890',           -- license number (optional)
+  '2025-12-31'::date        -- license expiry (optional)
+);
+```
+
+### Create Repair Organization User
+
+First create the organization, then the user:
+
+```sql
+-- Create organization
+INSERT INTO repair_organizations (org_code, org_name, contact_person, phone, email)
+VALUES ('REP001', 'ABC Repairs', 'John Manager', '9876543210', 'abc@repairs.com')
+RETURNING id;
+
+-- Create user (use the returned org id)
+SELECT create_user_with_role(
+  'repair@example.com',
+  'RepairPassword123',
+  'Repair User',
+  'repair_org',
+  NULL, NULL, NULL,
+  'org-uuid-here'  -- repair_org_id from above
+);
 ```
 
 ---
 
-## Step 3: Set Up the Database
+## Architecture
 
-Run the following SQL in your Supabase SQL Editor (Studio → SQL Editor):
-
-### 3.1 Create Enums
-
-```sql
--- Create custom enums
-CREATE TYPE public.app_role AS ENUM ('admin', 'driver');
-CREATE TYPE public.bus_status AS ENUM ('active', 'maintenance', 'inactive');
-CREATE TYPE public.expense_status AS ENUM ('pending', 'approved', 'denied');
-CREATE TYPE public.trip_status AS ENUM ('scheduled', 'in_progress', 'completed', 'cancelled');
 ```
-
-### 3.2 Create Tables
-
-```sql
--- Buses table
-CREATE TABLE public.buses (
-    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    registration_number text NOT NULL,
-    bus_name text,
-    capacity integer NOT NULL DEFAULT 40,
-    bus_type text DEFAULT 'AC Sleeper',
-    status bus_status NOT NULL DEFAULT 'active',
-    insurance_expiry date,
-    puc_expiry date,
-    fitness_expiry date,
-    created_at timestamptz NOT NULL DEFAULT now(),
-    updated_at timestamptz NOT NULL DEFAULT now()
-);
-
--- Indian States table
-CREATE TABLE public.indian_states (
-    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    state_name text NOT NULL,
-    state_code text NOT NULL,
-    is_union_territory boolean DEFAULT false,
-    created_at timestamptz NOT NULL DEFAULT now()
-);
-
--- Profiles table
-CREATE TABLE public.profiles (
-    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id uuid NOT NULL UNIQUE,
-    full_name text NOT NULL,
-    phone text,
-    license_number text,
-    license_expiry date,
-    address text,
-    avatar_url text,
-    created_at timestamptz NOT NULL DEFAULT now(),
-    updated_at timestamptz NOT NULL DEFAULT now()
-);
-
--- User Roles table
-CREATE TABLE public.user_roles (
-    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id uuid NOT NULL,
-    role app_role NOT NULL,
-    created_at timestamptz NOT NULL DEFAULT now(),
-    UNIQUE (user_id, role)
-);
-
--- Routes table
-CREATE TABLE public.routes (
-    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    route_name text NOT NULL,
-    from_state_id uuid NOT NULL REFERENCES indian_states(id),
-    to_state_id uuid NOT NULL REFERENCES indian_states(id),
-    from_address text,
-    to_address text,
-    distance_km numeric,
-    estimated_duration_hours numeric,
-    created_at timestamptz NOT NULL DEFAULT now(),
-    updated_at timestamptz NOT NULL DEFAULT now()
-);
-
--- Trips table
-CREATE TABLE public.trips (
-    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    trip_number text NOT NULL,
-    bus_id uuid NOT NULL REFERENCES buses(id),
-    driver_id uuid NOT NULL REFERENCES profiles(id),
-    route_id uuid NOT NULL REFERENCES routes(id),
-    start_date timestamptz NOT NULL,
-    end_date timestamptz,
-    status trip_status NOT NULL DEFAULT 'scheduled',
-    trip_type text NOT NULL DEFAULT 'one_way',
-    notes text,
-    -- Outward journey
-    odometer_start numeric,
-    odometer_end numeric,
-    distance_traveled numeric,
-    revenue_cash numeric DEFAULT 0,
-    revenue_online numeric DEFAULT 0,
-    revenue_paytm numeric DEFAULT 0,
-    revenue_others numeric DEFAULT 0,
-    total_revenue numeric,
-    total_expense numeric DEFAULT 0,
-    -- Return journey
-    odometer_return_start numeric,
-    odometer_return_end numeric,
-    distance_return numeric,
-    return_revenue_cash numeric DEFAULT 0,
-    return_revenue_online numeric DEFAULT 0,
-    return_revenue_paytm numeric DEFAULT 0,
-    return_revenue_others numeric DEFAULT 0,
-    return_total_revenue numeric DEFAULT 0,
-    return_total_expense numeric DEFAULT 0,
-    created_at timestamptz NOT NULL DEFAULT now(),
-    updated_at timestamptz NOT NULL DEFAULT now()
-);
-
--- Expense Categories table
-CREATE TABLE public.expense_categories (
-    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    name text NOT NULL,
-    description text,
-    icon text,
-    created_at timestamptz NOT NULL DEFAULT now()
-);
-
--- Expenses table
-CREATE TABLE public.expenses (
-    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    trip_id uuid NOT NULL REFERENCES trips(id),
-    category_id uuid NOT NULL REFERENCES expense_categories(id),
-    submitted_by uuid NOT NULL REFERENCES profiles(id),
-    amount numeric NOT NULL,
-    expense_date date NOT NULL DEFAULT CURRENT_DATE,
-    description text,
-    document_url text,
-    status expense_status NOT NULL DEFAULT 'pending',
-    admin_remarks text,
-    approved_by uuid REFERENCES profiles(id),
-    approved_at timestamptz,
-    created_at timestamptz NOT NULL DEFAULT now(),
-    updated_at timestamptz NOT NULL DEFAULT now()
-);
-
--- Notifications table
-CREATE TABLE public.notifications (
-    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id uuid NOT NULL,
-    title text NOT NULL,
-    message text NOT NULL,
-    type text NOT NULL DEFAULT 'info',
-    read boolean NOT NULL DEFAULT false,
-    link text,
-    created_at timestamptz NOT NULL DEFAULT now()
-);
-```
-
-### 3.3 Create Database Functions
-
-```sql
--- Check if user has role
-CREATE OR REPLACE FUNCTION public.has_role(_user_id uuid, _role app_role)
-RETURNS boolean
-LANGUAGE sql
-STABLE
-SECURITY DEFINER
-SET search_path = public
-AS $$
-  SELECT EXISTS (
-    SELECT 1 FROM public.user_roles
-    WHERE user_id = _user_id AND role = _role
-  )
-$$;
-
--- Get profile ID from user ID
-CREATE OR REPLACE FUNCTION public.get_profile_id(_user_id uuid)
-RETURNS uuid
-LANGUAGE sql
-STABLE
-SECURITY DEFINER
-SET search_path = public
-AS $$
-  SELECT id FROM public.profiles WHERE user_id = _user_id LIMIT 1
-$$;
-
--- Update timestamp trigger
-CREATE OR REPLACE FUNCTION public.update_updated_at_column()
-RETURNS trigger
-LANGUAGE plpgsql
-SET search_path = public
-AS $$
-BEGIN
-    NEW.updated_at = now();
-    RETURN NEW;
-END;
-$$;
-
--- Update trip total expense
-CREATE OR REPLACE FUNCTION public.update_trip_total_expense()
-RETURNS trigger
-LANGUAGE plpgsql
-SET search_path = public
-AS $$
-BEGIN
-    IF NEW.status = 'approved' AND (OLD.status IS NULL OR OLD.status != 'approved') THEN
-        UPDATE public.trips SET total_expense = total_expense + NEW.amount WHERE id = NEW.trip_id;
-    ELSIF OLD.status = 'approved' AND NEW.status != 'approved' THEN
-        UPDATE public.trips SET total_expense = total_expense - OLD.amount WHERE id = NEW.trip_id;
-    END IF;
-    RETURN NEW;
-END;
-$$;
-
--- Handle new user (create profile)
-CREATE OR REPLACE FUNCTION public.handle_new_user()
-RETURNS trigger
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-BEGIN
-    INSERT INTO public.profiles (user_id, full_name)
-    VALUES (NEW.id, COALESCE(NEW.raw_user_meta_data->>'full_name', NEW.email));
-    RETURN NEW;
-END;
-$$;
-```
-
-### 3.4 Create Triggers
-
-```sql
--- Auto-create profile on user signup
-CREATE TRIGGER on_auth_user_created
-    AFTER INSERT ON auth.users
-    FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
-
--- Update expense total on status change
-CREATE TRIGGER update_expense_total
-    AFTER UPDATE ON public.expenses
-    FOR EACH ROW EXECUTE FUNCTION public.update_trip_total_expense();
-```
-
-### 3.5 Enable Row Level Security
-
-```sql
--- Enable RLS on all tables
-ALTER TABLE public.buses ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.user_roles ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.routes ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.trips ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.expenses ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.expense_categories ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.indian_states ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
-
--- Buses policies
-CREATE POLICY "Admins can manage buses" ON public.buses FOR ALL USING (has_role(auth.uid(), 'admin'));
-CREATE POLICY "Authenticated users can view buses" ON public.buses FOR SELECT USING (true);
-
--- Profiles policies
-CREATE POLICY "Users can view their own profile" ON public.profiles FOR SELECT USING (user_id = auth.uid());
-CREATE POLICY "Users can update their own profile" ON public.profiles FOR UPDATE USING (user_id = auth.uid());
-CREATE POLICY "Users can insert their own profile" ON public.profiles FOR INSERT WITH CHECK (user_id = auth.uid());
-CREATE POLICY "Admins can view all profiles" ON public.profiles FOR SELECT USING (has_role(auth.uid(), 'admin'));
-CREATE POLICY "Admins can manage all profiles" ON public.profiles FOR ALL USING (has_role(auth.uid(), 'admin'));
-
--- User roles policies
-CREATE POLICY "Users can view their own roles" ON public.user_roles FOR SELECT USING (user_id = auth.uid());
-CREATE POLICY "Admins can view all roles" ON public.user_roles FOR SELECT USING (has_role(auth.uid(), 'admin'));
-CREATE POLICY "Admins can manage roles" ON public.user_roles FOR ALL USING (has_role(auth.uid(), 'admin'));
-
--- Routes policies
-CREATE POLICY "Authenticated users can view routes" ON public.routes FOR SELECT USING (true);
-CREATE POLICY "Admins can manage routes" ON public.routes FOR ALL USING (has_role(auth.uid(), 'admin'));
-
--- Trips policies
-CREATE POLICY "Drivers can view their own trips" ON public.trips FOR SELECT USING (driver_id = get_profile_id(auth.uid()));
-CREATE POLICY "Drivers can update odometer on their trips" ON public.trips FOR UPDATE USING (driver_id = get_profile_id(auth.uid()));
-CREATE POLICY "Admins can view all trips" ON public.trips FOR SELECT USING (has_role(auth.uid(), 'admin'));
-CREATE POLICY "Admins can manage trips" ON public.trips FOR ALL USING (has_role(auth.uid(), 'admin'));
-
--- Expenses policies
-CREATE POLICY "Drivers can view their own expenses" ON public.expenses FOR SELECT USING (submitted_by = get_profile_id(auth.uid()));
-CREATE POLICY "Drivers can insert their own expenses" ON public.expenses FOR INSERT WITH CHECK (submitted_by = get_profile_id(auth.uid()));
-CREATE POLICY "Drivers can update their pending expenses" ON public.expenses FOR UPDATE USING ((submitted_by = get_profile_id(auth.uid())) AND (status = 'pending'));
-CREATE POLICY "Admins can view all expenses" ON public.expenses FOR SELECT USING (has_role(auth.uid(), 'admin'));
-CREATE POLICY "Admins can manage all expenses" ON public.expenses FOR ALL USING (has_role(auth.uid(), 'admin'));
-
--- Expense categories policies
-CREATE POLICY "Authenticated users can view expense categories" ON public.expense_categories FOR SELECT USING (true);
-CREATE POLICY "Admins can manage expense categories" ON public.expense_categories FOR ALL USING (has_role(auth.uid(), 'admin'));
-
--- Indian states policies
-CREATE POLICY "Anyone can view indian states" ON public.indian_states FOR SELECT USING (true);
-CREATE POLICY "Admins can manage indian states" ON public.indian_states FOR ALL USING (has_role(auth.uid(), 'admin'));
-
--- Notifications policies
-CREATE POLICY "Users can view their own notifications" ON public.notifications FOR SELECT USING (user_id = auth.uid());
-CREATE POLICY "Users can update their own notifications" ON public.notifications FOR UPDATE USING (user_id = auth.uid());
-CREATE POLICY "Users can delete their own notifications" ON public.notifications FOR DELETE USING (user_id = auth.uid());
-CREATE POLICY "Service role can insert notifications" ON public.notifications FOR INSERT WITH CHECK (true);
-
--- Enable realtime for notifications
-ALTER PUBLICATION supabase_realtime ADD TABLE public.notifications;
-```
-
-### 3.6 Seed Initial Data
-
-```sql
--- Insert default expense categories
-INSERT INTO public.expense_categories (name, description, icon) VALUES
-    ('Fuel', 'Diesel or Petrol expenses', 'Fuel'),
-    ('Toll', 'Toll plaza charges', 'Receipt'),
-    ('Food', 'Food and refreshments for driver', 'Utensils'),
-    ('Repair', 'Vehicle repairs and maintenance', 'Wrench'),
-    ('Traffic Fine', 'Traffic violations and penalties', 'AlertTriangle'),
-    ('Parking', 'Parking charges', 'ParkingCircle'),
-    ('Miscellaneous', 'Other expenses', 'MoreHorizontal');
-
--- Insert Indian states
-INSERT INTO public.indian_states (state_name, state_code, is_union_territory) VALUES
-    ('Andhra Pradesh', 'AP', false),
-    ('Arunachal Pradesh', 'AR', false),
-    ('Assam', 'AS', false),
-    ('Bihar', 'BR', false),
-    ('Chhattisgarh', 'CG', false),
-    ('Goa', 'GA', false),
-    ('Gujarat', 'GJ', false),
-    ('Haryana', 'HR', false),
-    ('Himachal Pradesh', 'HP', false),
-    ('Jharkhand', 'JH', false),
-    ('Karnataka', 'KA', false),
-    ('Kerala', 'KL', false),
-    ('Madhya Pradesh', 'MP', false),
-    ('Maharashtra', 'MH', false),
-    ('Manipur', 'MN', false),
-    ('Meghalaya', 'ML', false),
-    ('Mizoram', 'MZ', false),
-    ('Nagaland', 'NL', false),
-    ('Odisha', 'OD', false),
-    ('Punjab', 'PB', false),
-    ('Rajasthan', 'RJ', false),
-    ('Sikkim', 'SK', false),
-    ('Tamil Nadu', 'TN', false),
-    ('Telangana', 'TG', false),
-    ('Tripura', 'TR', false),
-    ('Uttar Pradesh', 'UP', false),
-    ('Uttarakhand', 'UK', false),
-    ('West Bengal', 'WB', false),
-    ('Delhi', 'DL', true),
-    ('Jammu and Kashmir', 'JK', true),
-    ('Ladakh', 'LA', true),
-    ('Chandigarh', 'CH', true),
-    ('Puducherry', 'PY', true),
-    ('Andaman and Nicobar', 'AN', true),
-    ('Lakshadweep', 'LD', true),
-    ('Dadra Nagar Haveli and Daman Diu', 'DN', true);
+┌─────────────────────────────────────────────────────────────────┐
+│                         Docker Network                           │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐  │
+│  │ Frontend │    │   Kong   │    │   Auth   │    │   REST   │  │
+│  │  :5173   │───▶│  :8000   │───▶│  :9999   │    │  :3001   │  │
+│  └──────────┘    └──────────┘    └──────────┘    └──────────┘  │
+│                        │                │              │         │
+│                        │                └──────────────┼─────────┤
+│                        │                               │         │
+│                        ▼                               ▼         │
+│  ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐  │
+│  │  Studio  │    │ Realtime │    │ Storage  │    │ Postgres │  │
+│  │  :3000   │    │  :4000   │    │  :5000   │    │  :5432   │  │
+│  └──────────┘    └──────────┘    └──────────┘    └──────────┘  │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Step 4: Create Storage Bucket
+## Services
 
-In Supabase Studio (http://localhost:3000):
-1. Go to Storage
-2. Create a new bucket named `expense-documents`
-3. Set it to private (not public)
-4. Add storage policies:
+| Service | Container | Port | Purpose |
+|---------|-----------|------|---------|
+| Frontend | fleet-frontend | 5173 | React app |
+| Kong | fleet-kong | 8000 | API Gateway |
+| Auth | fleet-auth | 9999 | Authentication (GoTrue) |
+| REST | fleet-rest | 3001 | PostgREST API |
+| Realtime | fleet-realtime | 4000 | WebSocket subscriptions |
+| Storage | fleet-storage | 5000 | File storage |
+| Database | fleet-db | 5432 | PostgreSQL |
+| Studio | fleet-studio | 3000 | Admin UI |
+| Meta | fleet-meta | - | DB metadata for Studio |
 
-```sql
--- Allow authenticated users to upload to their folder
-CREATE POLICY "Users can upload expense documents"
-ON storage.objects FOR INSERT
-WITH CHECK (bucket_id = 'expense-documents' AND auth.role() = 'authenticated');
+---
 
--- Allow users to view their own documents
-CREATE POLICY "Users can view their expense documents"
-ON storage.objects FOR SELECT
-USING (bucket_id = 'expense-documents' AND auth.role() = 'authenticated');
+## Data Persistence
+
+Data is stored in Docker volumes:
+- `db-data` - PostgreSQL database
+- `storage-data` - Uploaded files
+
+### Backup Database
+
+```bash
+# Create backup
+docker exec fleet-db pg_dump -U postgres postgres > backup.sql
+
+# Restore backup
+cat backup.sql | docker exec -i fleet-db psql -U postgres postgres
+```
+
+### Backup Everything
+
+```bash
+# Stop services first
+docker compose stop
+
+# Backup volumes
+docker run --rm -v fleet-manager_db-data:/data -v $(pwd):/backup alpine tar czf /backup/db-backup.tar.gz /data
+docker run --rm -v fleet-manager_storage-data:/data -v $(pwd):/backup alpine tar czf /backup/storage-backup.tar.gz /data
+
+# Restart services
+docker compose start
 ```
 
 ---
 
-## Step 5: Configure the Frontend
+## Common Operations
 
-### 5.1 Update Environment Variables
+### View Logs
 
-Create or edit `.env` in the project root:
+```bash
+# All services
+docker compose logs -f
 
+# Specific service
+docker compose logs -f frontend
+docker compose logs -f auth
+docker compose logs -f db
+```
+
+### Restart Services
+
+```bash
+# All services
+docker compose restart
+
+# Specific service
+docker compose restart frontend
+```
+
+### Stop Everything
+
+```bash
+docker compose down
+```
+
+### Reset Database (⚠️ DELETES ALL DATA)
+
+```bash
+docker compose down -v
+docker compose up -d
+```
+
+---
+
+## Updating
+
+```bash
+# Pull latest code
+git pull  # or download new ZIP
+
+# Rebuild and restart
+docker compose build frontend
+docker compose up -d
+```
+
+---
+
+## Network Configuration
+
+### Running on LAN
+
+Update `.env`:
 ```env
-VITE_SUPABASE_URL=http://localhost:8000
-VITE_SUPABASE_PUBLISHABLE_KEY=your-anon-key-here
-VITE_SUPABASE_PROJECT_ID=local
+API_EXTERNAL_URL=http://192.168.1.100:8000
+SITE_URL=http://192.168.1.100:5173
 ```
 
-### 5.2 Update Supabase Client
-
-Edit `src/integrations/supabase/client.ts` if needed to use your local URL.
-
-### 5.3 Install Dependencies and Run
-
+Then rebuild:
 ```bash
-# Install dependencies
-npm install
-
-# Run development server
-npm run dev
+docker compose build frontend
+docker compose up -d
 ```
 
----
+### Custom Domain (Production)
 
-## Step 6: Deploy Edge Functions (Optional)
-
-If you want to use edge functions locally:
-
-```bash
-# Deploy edge functions to local Supabase
-supabase functions serve
-
-# Or deploy specific function
-supabase functions serve check-trip-notifications
-supabase functions serve create-driver
-```
-
----
-
-## Step 7: Create Admin User
-
-1. Sign up through the app at http://localhost:5173/signup
-2. In Supabase Studio SQL Editor, promote the user to admin:
-
-```sql
--- Get your user ID from auth.users table first
-SELECT id, email FROM auth.users;
-
--- Insert admin role (replace USER_ID with actual ID)
-INSERT INTO public.user_roles (user_id, role) 
-VALUES ('YOUR_USER_ID_HERE', 'admin');
-```
-
----
-
-## Production Deployment
-
-For production self-hosting:
-
-1. **Use proper SSL certificates** - Never run without HTTPS in production
-2. **Set strong passwords** - Change all default passwords
-3. **Configure backups** - Set up PostgreSQL backups
-4. **Use reverse proxy** - Nginx or Traefik for load balancing
-5. **Monitor resources** - Set up monitoring and alerts
-
-### Docker Compose for Production
-
-```yaml
-version: '3.8'
-services:
-  frontend:
-    build: .
-    ports:
-      - "80:80"
-    environment:
-      - VITE_SUPABASE_URL=https://your-domain.com
-      - VITE_SUPABASE_PUBLISHABLE_KEY=your-anon-key
-    depends_on:
-      - supabase
+1. Set up reverse proxy (nginx/traefik)
+2. Configure SSL certificates
+3. Update `.env`:
+```env
+API_EXTERNAL_URL=https://api.yourdomain.com
+SITE_URL=https://fleet.yourdomain.com
 ```
 
 ---
 
 ## Troubleshooting
 
-### Common Issues
-
-1. **Connection refused**: Ensure Docker is running and Supabase is started
-2. **Authentication errors**: Verify JWT_SECRET and API keys match
-3. **RLS blocking access**: Check user roles in user_roles table
-4. **Edge functions not working**: Ensure Deno is installed for local functions
-
-### Logs
+### Services Won't Start
 
 ```bash
-# View Supabase logs
-docker compose logs -f
+# Check status
+docker compose ps
 
-# View specific service logs
-docker compose logs -f postgres
-docker compose logs -f kong
+# Check logs
+docker compose logs db
+docker compose logs auth
 ```
+
+### Database Connection Issues
+
+```bash
+# Test database connection
+docker exec -it fleet-db psql -U postgres -c "SELECT 1;"
+
+# Check if init script ran
+docker exec -it fleet-db psql -U postgres -c "SELECT COUNT(*) FROM indian_states;"
+```
+
+### Auth Not Working
+
+```bash
+# Check auth service logs
+docker compose logs auth
+
+# Verify JWT secret matches between services
+docker compose config | grep JWT_SECRET
+```
+
+### Frontend Shows Blank Page
+
+```bash
+# Check frontend build
+docker compose logs frontend
+
+# Verify environment variables
+docker exec fleet-frontend env | grep VITE
+```
+
+### Storage Upload Fails
+
+```bash
+# Check storage service
+docker compose logs storage
+
+# Verify buckets exist
+docker exec -it fleet-db psql -U postgres -c "SELECT * FROM storage.buckets;"
+```
+
+---
+
+## Production Checklist
+
+- [ ] Change `POSTGRES_PASSWORD` to a strong password
+- [ ] Change `JWT_SECRET` to a random 64+ character string
+- [ ] Generate new `ANON_KEY` and `SERVICE_ROLE_KEY`
+- [ ] Set up SSL/TLS (required for production)
+- [ ] Configure proper backup strategy
+- [ ] Set up monitoring and alerting
+- [ ] Restrict network access (firewall rules)
+- [ ] Enable SMTP for password reset emails
 
 ---
 
 ## Support
 
-For issues with self-hosting:
+For issues specific to this Fleet Manager application, check the project repository.
+
+For Supabase self-hosting issues, see:
 - [Supabase Self-Hosting Docs](https://supabase.com/docs/guides/self-hosting)
-- [Supabase GitHub Issues](https://github.com/supabase/supabase/issues)
+- [Supabase GitHub](https://github.com/supabase/supabase)
