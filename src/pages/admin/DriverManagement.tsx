@@ -10,9 +10,19 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { supabase } from '@/integrations/supabase/client';
 import { Profile, AppRole } from '@/types/database';
-import { UserPlus, Loader2, Pencil, Download } from 'lucide-react';
+import { UserPlus, Loader2, Pencil, Download, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { exportToExcel, formatDate } from '@/lib/exportUtils';
 
@@ -31,6 +41,13 @@ export default function DriverManagement() {
   const [selectedRole, setSelectedRole] = useState<AppRole>('driver');
   const [submitting, setSubmitting] = useState(false);
   const [dialogTab, setDialogTab] = useState<'create' | 'assign'>('create');
+
+  // Delete state
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deletingDriver, setDeletingDriver] = useState<DriverWithRole | null>(null);
+  const [hasRelatedData, setHasRelatedData] = useState(false);
+  const [relatedDataInfo, setRelatedDataInfo] = useState({ trips: 0, expenses: 0 });
+  const [deleting, setDeleting] = useState(false);
 
   // New driver form
   const [newDriver, setNewDriver] = useState({
@@ -223,6 +240,75 @@ export default function DriverManagement() {
     }
 
     setSubmitting(false);
+  }
+
+  async function handleDeleteDriver(driver: DriverWithRole) {
+    setDeletingDriver(driver);
+    
+    // Check if driver has related trips
+    const { count: tripsCount, error: tripsError } = await supabase
+      .from('trips')
+      .select('*', { count: 'exact', head: true })
+      .eq('driver_id', driver.id);
+
+    if (tripsError) {
+      toast.error('Failed to check driver dependencies');
+      return;
+    }
+
+    // Check if driver has submitted expenses
+    const { count: expensesCount, error: expensesError } = await supabase
+      .from('expenses')
+      .select('*', { count: 'exact', head: true })
+      .eq('submitted_by', driver.id);
+
+    if (expensesError) {
+      toast.error('Failed to check driver dependencies');
+      return;
+    }
+
+    const trips = tripsCount || 0;
+    const expenses = expensesCount || 0;
+
+    setRelatedDataInfo({ trips, expenses });
+    setHasRelatedData(trips > 0 || expenses > 0);
+    setDeleteDialogOpen(true);
+  }
+
+  async function confirmDeleteDriver() {
+    if (!deletingDriver) return;
+
+    setDeleting(true);
+
+    // First, delete from user_roles
+    const { error: roleError } = await supabase
+      .from('user_roles')
+      .delete()
+      .eq('user_id', deletingDriver.user_id);
+
+    if (roleError) {
+      toast.error('Failed to delete driver role');
+      setDeleting(false);
+      return;
+    }
+
+    // Then, delete from profiles
+    const { error: profileError } = await supabase
+      .from('profiles')
+      .delete()
+      .eq('id', deletingDriver.id);
+
+    if (profileError) {
+      toast.error('Failed to delete driver profile');
+    } else {
+      toast.success('Driver deleted successfully');
+      fetchDrivers();
+      fetchProfiles();
+    }
+
+    setDeleting(false);
+    setDeleteDialogOpen(false);
+    setDeletingDriver(null);
   }
 
   function handleExportDrivers() {
@@ -427,7 +513,7 @@ export default function DriverManagement() {
                   <TableHead>License Expiry</TableHead>
                   <TableHead>Role</TableHead>
                   <TableHead>Joined</TableHead>
-                  <TableHead className="w-[50px]"></TableHead>
+                  <TableHead className="w-[100px]"></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -455,9 +541,14 @@ export default function DriverManagement() {
                         {new Date(driver.created_at).toLocaleDateString('en-IN')}
                       </TableCell>
                       <TableCell>
-                        <Button variant="ghost" size="icon" onClick={() => handleEditDriver(driver)}>
-                          <Pencil className="h-4 w-4" />
-                        </Button>
+                        <div className="flex gap-1">
+                          <Button variant="ghost" size="icon" onClick={() => handleEditDriver(driver)}>
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button variant="ghost" size="icon" onClick={() => handleDeleteDriver(driver)}>
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))
@@ -533,6 +624,54 @@ export default function DriverManagement() {
             )}
           </DialogContent>
         </Dialog>
+
+        {/* Delete Confirmation Dialog */}
+        <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                {hasRelatedData ? 'Cannot Delete Driver' : 'Delete Driver'}
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                {hasRelatedData ? (
+                  <>
+                    This driver <strong>"{deletingDriver?.full_name}"</strong> has associated data 
+                    and cannot be deleted:
+                    <ul className="list-disc list-inside mt-2">
+                      {relatedDataInfo.trips > 0 && <li>{relatedDataInfo.trips} trip(s)</li>}
+                      {relatedDataInfo.expenses > 0 && <li>{relatedDataInfo.expenses} expense(s)</li>}
+                    </ul>
+                    <p className="mt-2">Please remove or reassign this data first.</p>
+                  </>
+                ) : (
+                  <>
+                    Are you sure you want to delete driver <strong>"{deletingDriver?.full_name}"</strong>? 
+                    This will also remove their role assignment. This action cannot be undone.
+                  </>
+                )}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              {hasRelatedData ? (
+                <AlertDialogAction onClick={() => setDeleteDialogOpen(false)}>
+                  OK
+                </AlertDialogAction>
+              ) : (
+                <>
+                  <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={confirmDeleteDriver}
+                    disabled={deleting}
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  >
+                    {deleting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                    Delete
+                  </AlertDialogAction>
+                </>
+              )}
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </DashboardLayout>
   );
