@@ -270,11 +270,8 @@ export default function AdminDashboard() {
       const bus = trip.bus as any;
       const driver = trip.driver as any;
       
-      const outwardRevenue = (Number(trip.revenue_cash) || 0) + (Number(trip.revenue_online) || 0) + 
-        (Number(trip.revenue_paytm) || 0) + (Number(trip.revenue_others) || 0);
-      const returnRevenue = (Number(trip.return_revenue_cash) || 0) + (Number(trip.return_revenue_online) || 0) + 
-        (Number(trip.return_revenue_paytm) || 0) + (Number(trip.return_revenue_others) || 0);
-      const tripRevenue = outwardRevenue + returnRevenue;
+      // Use the pre-calculated total_revenue fields which include all revenue sources (cash, online, paytm, others, agent)
+      const tripRevenue = (Number(trip.total_revenue) || 0) + (Number(trip.return_total_revenue) || 0);
       const tripExpense = expensesByTrip[trip.id]?.total || 0;
       const tripFuel = expensesByTrip[trip.id]?.fuel || 0;
       const distance = (Number(trip.distance_traveled) || 0) + (Number(trip.distance_return) || 0);
