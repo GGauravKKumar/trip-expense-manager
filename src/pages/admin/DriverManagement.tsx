@@ -25,6 +25,8 @@ import { Profile, AppRole } from '@/types/database';
 import { UserPlus, Loader2, Pencil, Download, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { exportToExcel, formatDate } from '@/lib/exportUtils';
+import { useTableFilters } from '@/hooks/useTableFilters';
+import { SearchFilterBar, TablePagination } from '@/components/TableFilters';
 
 interface DriverWithRole extends Profile {
   role?: AppRole;
@@ -58,6 +60,37 @@ export default function DriverManagement() {
     license_number: '',
     license_expiry: '',
     address: '',
+  });
+
+  // Table filters
+  const {
+    searchQuery,
+    setSearchQuery,
+    filters,
+    setFilter,
+    currentPage,
+    setCurrentPage,
+    pageSize,
+    setPageSize,
+    paginatedData,
+    totalPages,
+    showingFrom,
+    showingTo,
+    totalCount,
+  } = useTableFilters({
+    data: drivers,
+    searchFields: ['full_name', 'phone', 'license_number'],
+  });
+
+  // Apply role filter
+  const filteredDrivers = paginatedData.filter((driver) => {
+    if (filters.role && filters.role !== 'all') {
+      if (filters.role === 'no_role') {
+        return !driver.role;
+      }
+      return driver.role === filters.role;
+    }
+    return true;
   });
 
   useEffect(() => {
@@ -516,6 +549,27 @@ export default function DriverManagement() {
           </div>
         </div>
 
+        {/* Search and Filter Bar */}
+        <SearchFilterBar
+          searchPlaceholder="Search by name, phone, or license..."
+          searchValue={searchQuery}
+          onSearchChange={setSearchQuery}
+          filters={[
+            {
+              key: 'role',
+              label: 'Role',
+              value: filters.role || 'all',
+              onChange: (value) => setFilter('role', value),
+              options: [
+                { label: 'All Roles', value: 'all' },
+                { label: 'Admin', value: 'admin' },
+                { label: 'Driver', value: 'driver' },
+                { label: 'No Role', value: 'no_role' },
+              ],
+            },
+          ]}
+        />
+
         <Card>
           <CardContent className="p-0">
             <Table>
@@ -537,14 +591,14 @@ export default function DriverManagement() {
                       <Loader2 className="h-6 w-6 animate-spin mx-auto" />
                     </TableCell>
                   </TableRow>
-                ) : drivers.length === 0 ? (
+                ) : filteredDrivers.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                      No users registered yet
+                      {drivers.length === 0 ? 'No users registered yet' : 'No users match your search'}
                     </TableCell>
                   </TableRow>
                 ) : (
-                  drivers.map((driver) => (
+                  filteredDrivers.map((driver) => (
                     <TableRow key={driver.id}>
                       <TableCell className="font-medium">{driver.full_name}</TableCell>
                       <TableCell>{driver.phone || '-'}</TableCell>
@@ -569,6 +623,17 @@ export default function DriverManagement() {
                 )}
               </TableBody>
             </Table>
+            <TablePagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              pageSize={pageSize}
+              showingFrom={showingFrom}
+              showingTo={showingTo}
+              totalCount={totalCount}
+              onPageChange={setCurrentPage}
+              onPageSizeChange={setPageSize}
+              itemName="users"
+            />
           </CardContent>
         </Card>
 

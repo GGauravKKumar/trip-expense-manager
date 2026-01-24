@@ -22,6 +22,8 @@ import { supabase } from '@/integrations/supabase/client';
 import { Bus, BusStatus } from '@/types/database';
 import { Plus, Pencil, Loader2, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { useTableFilters } from '@/hooks/useTableFilters';
+import { SearchFilterBar, TablePagination } from '@/components/TableFilters';
 
 export default function BusManagement() {
   const [buses, setBuses] = useState<Bus[]>([]);
@@ -45,6 +47,34 @@ export default function BusManagement() {
   const [deletingBus, setDeletingBus] = useState<Bus | null>(null);
   const [hasRelatedTrips, setHasRelatedTrips] = useState(false);
   const [deleting, setDeleting] = useState(false);
+
+  // Table filters
+  const {
+    searchQuery,
+    setSearchQuery,
+    filters,
+    setFilter,
+    currentPage,
+    setCurrentPage,
+    pageSize,
+    setPageSize,
+    paginatedData,
+    totalPages,
+    showingFrom,
+    showingTo,
+    totalCount,
+  } = useTableFilters({
+    data: buses,
+    searchFields: ['registration_number', 'bus_name', 'bus_type'],
+  });
+
+  // Apply status filter
+  const filteredBuses = paginatedData.filter((bus) => {
+    if (filters.status && filters.status !== 'all') {
+      return bus.status === filters.status;
+    }
+    return true;
+  });
 
   useEffect(() => {
     fetchBuses();
@@ -330,6 +360,27 @@ export default function BusManagement() {
           </Dialog>
         </div>
 
+        {/* Search and Filter Bar */}
+        <SearchFilterBar
+          searchPlaceholder="Search by registration, name, or type..."
+          searchValue={searchQuery}
+          onSearchChange={setSearchQuery}
+          filters={[
+            {
+              key: 'status',
+              label: 'Status',
+              value: filters.status || 'all',
+              onChange: (value) => setFilter('status', value),
+              options: [
+                { label: 'All Status', value: 'all' },
+                { label: 'Active', value: 'active' },
+                { label: 'Maintenance', value: 'maintenance' },
+                { label: 'Inactive', value: 'inactive' },
+              ],
+            },
+          ]}
+        />
+
         <Card>
           <CardContent className="p-0">
             <Table>
@@ -352,14 +403,14 @@ export default function BusManagement() {
                       <Loader2 className="h-6 w-6 animate-spin mx-auto" />
                     </TableCell>
                   </TableRow>
-                ) : buses.length === 0 ? (
+                ) : filteredBuses.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
-                      No buses added yet
+                      {buses.length === 0 ? 'No buses added yet' : 'No buses match your search'}
                     </TableCell>
                   </TableRow>
                 ) : (
-                  buses.map((bus) => (
+                  filteredBuses.map((bus) => (
                     <TableRow key={bus.id}>
                       <TableCell className="font-medium">{bus.registration_number}</TableCell>
                       <TableCell>{bus.bus_name || '-'}</TableCell>
@@ -383,6 +434,17 @@ export default function BusManagement() {
                 )}
               </TableBody>
             </Table>
+            <TablePagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              pageSize={pageSize}
+              showingFrom={showingFrom}
+              showingTo={showingTo}
+              totalCount={totalCount}
+              onPageChange={setCurrentPage}
+              onPageSizeChange={setPageSize}
+              itemName="buses"
+            />
           </CardContent>
         </Card>
 

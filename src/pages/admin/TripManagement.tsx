@@ -18,6 +18,8 @@ import { exportTripSheet, mapTripToSheetData } from '@/lib/tripSheetExport';
 import TripExpensesDialog from '@/components/TripExpensesDialog';
 import TripRevenueDialog from '@/components/TripRevenueDialog';
 import PeriodExportDialog from '@/components/PeriodExportDialog';
+import { useTableFilters } from '@/hooks/useTableFilters';
+import { SearchFilterBar, TablePagination } from '@/components/TableFilters';
 
 export default function TripManagement() {
   const [trips, setTrips] = useState<Trip[]>([]);
@@ -44,6 +46,38 @@ export default function TripManagement() {
   const [revenueDialogOpen, setRevenueDialogOpen] = useState(false);
   const [revenueTrip, setRevenueTrip] = useState<Trip | null>(null);
   const [periodDialogOpen, setPeriodDialogOpen] = useState(false);
+
+  // Table filters
+  const {
+    searchQuery,
+    setSearchQuery,
+    filters,
+    setFilter,
+    currentPage,
+    setCurrentPage,
+    pageSize,
+    setPageSize,
+    paginatedData,
+    totalPages,
+    showingFrom,
+    showingTo,
+    totalCount,
+  } = useTableFilters({
+    data: trips,
+    searchFields: [
+      'trip_number',
+      (trip) => (trip.bus as any)?.registration_number,
+      (trip) => (trip.driver as any)?.full_name,
+      (trip) => (trip.route as any)?.route_name,
+    ],
+  });
+
+  // Apply status and type filters
+  const filteredTrips = paginatedData.filter((trip) => {
+    const matchesStatus = !filters.status || filters.status === 'all' || trip.status === filters.status;
+    const matchesType = !filters.trip_type || filters.trip_type === 'all' || trip.trip_type === filters.trip_type;
+    return matchesStatus && matchesType;
+  });
 
   function handleViewExpenses(trip: Trip) {
     setSelectedTrip(trip);
@@ -587,6 +621,39 @@ export default function TripManagement() {
           </div>
         </div>
 
+        {/* Search and Filter Bar */}
+        <SearchFilterBar
+          searchPlaceholder="Search by trip #, bus, driver, or route..."
+          searchValue={searchQuery}
+          onSearchChange={setSearchQuery}
+          filters={[
+            {
+              key: 'status',
+              label: 'Status',
+              value: filters.status || 'all',
+              onChange: (value) => setFilter('status', value),
+              options: [
+                { label: 'All Status', value: 'all' },
+                { label: 'Scheduled', value: 'scheduled' },
+                { label: 'In Progress', value: 'in_progress' },
+                { label: 'Completed', value: 'completed' },
+                { label: 'Cancelled', value: 'cancelled' },
+              ],
+            },
+            {
+              key: 'trip_type',
+              label: 'Type',
+              value: filters.trip_type || 'all',
+              onChange: (value) => setFilter('trip_type', value),
+              options: [
+                { label: 'All Types', value: 'all' },
+                { label: 'One Way', value: 'one_way' },
+                { label: 'Two Way', value: 'two_way' },
+              ],
+            },
+          ]}
+        />
+
         <Card>
           <CardContent className="p-0">
             <Table>
@@ -611,14 +678,14 @@ export default function TripManagement() {
                       <Loader2 className="h-6 w-6 animate-spin mx-auto" />
                     </TableCell>
                   </TableRow>
-                ) : trips.length === 0 ? (
+                ) : filteredTrips.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
-                      No trips created yet
+                      {trips.length === 0 ? 'No trips created yet' : 'No trips match your search'}
                     </TableCell>
                   </TableRow>
                 ) : (
-                  trips.map((trip) => {
+                  filteredTrips.map((trip) => {
                     // Calculate outward revenue
                     const outwardRevenue = Number(trip.total_revenue) || (
                       Number(trip.revenue_cash || 0) + 
@@ -697,6 +764,17 @@ export default function TripManagement() {
                 )}
               </TableBody>
             </Table>
+            <TablePagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              pageSize={pageSize}
+              showingFrom={showingFrom}
+              showingTo={showingTo}
+              totalCount={totalCount}
+              onPageChange={setCurrentPage}
+              onPageSizeChange={setPageSize}
+              itemName="trips"
+            />
           </CardContent>
         </Card>
 
