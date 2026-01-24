@@ -58,14 +58,17 @@ export type TripType = 'one_way' | 'two_way';
 export interface Trip {
   id: string;
   trip_number: string;
-  bus_id: string;
-  driver_id: string;
+  bus_id: string | null;
+  driver_id: string | null;
   route_id: string;
   start_date: string;
   end_date: string | null;
   status: TripStatus;
   notes: string | null;
   trip_type: TripType;
+  // Snapshot fields for deleted bus/driver
+  bus_name_snapshot: string | null;
+  driver_name_snapshot: string | null;
   // Outward journey
   total_expense: number;
   odometer_start: number | null;
@@ -88,8 +91,8 @@ export interface Trip {
   return_total_expense: number | null;
   created_at: string;
   updated_at: string;
-  bus?: Bus | { registration_number: string; bus_name?: string | null };
-  driver?: Profile | { full_name: string };
+  bus?: Bus | { registration_number: string; bus_name?: string | null } | null;
+  driver?: Profile | { full_name: string } | null;
   route?: Route | { route_name: string; distance_km?: number | null; from_address?: string | null; to_address?: string | null };
 }
 

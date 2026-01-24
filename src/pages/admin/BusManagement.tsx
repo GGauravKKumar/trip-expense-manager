@@ -139,18 +139,20 @@ export default function BusManagement() {
   async function handleDeleteBus(bus: Bus) {
     setDeletingBus(bus);
     
-    // Check if bus has related trips
-    const { count, error } = await supabase
+    // Check if bus has related trips that are NOT completed
+    const { count: activeTrips, error: activeError } = await supabase
       .from('trips')
       .select('*', { count: 'exact', head: true })
-      .eq('bus_id', bus.id);
+      .eq('bus_id', bus.id)
+      .neq('status', 'completed');
 
-    if (error) {
+    if (activeError) {
       toast.error('Failed to check bus dependencies');
       return;
     }
 
-    setHasRelatedTrips((count || 0) > 0);
+    // If there are active (non-completed) trips, block deletion
+    setHasRelatedTrips((activeTrips || 0) > 0);
     setDeleteDialogOpen(true);
   }
 
@@ -158,6 +160,21 @@ export default function BusManagement() {
     if (!deletingBus) return;
 
     setDeleting(true);
+    
+    // First, update all completed trips with this bus to store the bus name snapshot
+    const busName = deletingBus.bus_name || deletingBus.registration_number;
+    const { error: snapshotError } = await supabase
+      .from('trips')
+      .update({ bus_name_snapshot: `${busName} (${deletingBus.registration_number})` })
+      .eq('bus_id', deletingBus.id);
+
+    if (snapshotError) {
+      toast.error('Failed to preserve trip history');
+      setDeleting(false);
+      return;
+    }
+
+    // Now delete the bus (FK will be set to NULL automatically)
     const { error } = await supabase
       .from('buses')
       .delete()
@@ -377,14 +394,16 @@ export default function BusManagement() {
                 {hasRelatedTrips ? 'Cannot Delete Bus' : 'Delete Bus'}
               </AlertDialogTitle>
               <AlertDialogDescription>
-                {hasRelatedTrips ? (
+              {hasRelatedTrips ? (
                   <>
-                    This bus <strong>"{deletingBus?.registration_number}"</strong> has associated trips 
-                    and cannot be deleted. Please remove or reassign all trips first.
+                    This bus <strong>"{deletingBus?.registration_number}"</strong> has active trips 
+                    (scheduled, in progress, or cancelled) and cannot be deleted. 
+                    Please complete or reassign those trips first.
                   </>
                 ) : (
                   <>
                     Are you sure you want to delete bus <strong>"{deletingBus?.registration_number}"</strong>? 
+                    Historical trip records will be preserved with the bus name.
                     This action cannot be undone.
                   </>
                 )}

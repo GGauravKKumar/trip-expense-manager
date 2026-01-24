@@ -650,8 +650,16 @@ export default function TripManagement() {
                             )}
                           </Badge>
                         </TableCell>
-                        <TableCell>{(trip.bus as any)?.registration_number}</TableCell>
-                        <TableCell>{(trip.driver as any)?.full_name}</TableCell>
+                        <TableCell>
+                          {trip.bus ? (trip.bus as any)?.registration_number : (
+                            <span className="text-muted-foreground italic">{trip.bus_name_snapshot || 'Deleted'}</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {trip.driver ? (trip.driver as any)?.full_name : (
+                            <span className="text-muted-foreground italic">{trip.driver_name_snapshot || 'Deleted'}</span>
+                          )}
+                        </TableCell>
                         <TableCell>{(trip.route as any)?.route_name}</TableCell>
                         <TableCell>
                           {new Date(trip.start_date).toLocaleDateString('en-IN', {
