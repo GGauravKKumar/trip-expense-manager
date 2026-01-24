@@ -4,8 +4,13 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Calendar } from '@/components/ui/calendar';
 import { supabase } from '@/integrations/supabase/client';
-import { Loader2, TrendingUp, TrendingDown, Bus, Users, MapPin, Handshake, Building2 } from 'lucide-react';
+import { Loader2, TrendingUp, TrendingDown, Bus, Users, MapPin, Handshake, Building2, CalendarIcon, Filter } from 'lucide-react';
+import { format, startOfMonth, endOfMonth } from 'date-fns';
+import { cn } from '@/lib/utils';
 
 interface BusProfitability {
   id: string;
@@ -52,10 +57,14 @@ export default function ProfitabilityReport() {
   const [driverProfitability, setDriverProfitability] = useState<DriverProfitability[]>([]);
   const [routeProfitability, setRouteProfitability] = useState<RouteProfitability[]>([]);
   const [totals, setTotals] = useState({ revenue: 0, expense: 0, profit: 0, companyProfit: 0 });
+  
+  // Date filter state - default to current month
+  const [startDate, setStartDate] = useState<Date>(startOfMonth(new Date()));
+  const [endDate, setEndDate] = useState<Date>(endOfMonth(new Date()));
 
   useEffect(() => {
     fetchProfitabilityData();
-  }, []);
+  }, [startDate, endDate]);
 
   async function fetchProfitabilityData() {
     setLoading(true);
@@ -69,7 +78,10 @@ export default function ProfitabilityReport() {
     
     const fuelPricePerLiter = fuelSetting?.value ? parseFloat(fuelSetting.value) : 90;
 
-    // Fetch trips with related data including bus ownership details
+    // Fetch trips with related data including bus ownership details, filtered by date
+    const startDateStr = format(startDate, 'yyyy-MM-dd');
+    const endDateStr = format(endDate, 'yyyy-MM-dd');
+    
     const { data: trips } = await supabase
       .from('trips')
       .select(`
@@ -78,7 +90,9 @@ export default function ProfitabilityReport() {
         driver:profiles(id, full_name),
         route:routes(id, route_name)
       `)
-      .eq('status', 'completed');
+      .eq('status', 'completed')
+      .gte('start_date', startDateStr)
+      .lte('start_date', endDateStr + 'T23:59:59');
 
     // Fetch fuel expense categories (diesel, fuel, petrol)
     const { data: fuelCategories } = await supabase
@@ -300,9 +314,61 @@ export default function ProfitabilityReport() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold">Profitability Report</h1>
-          <p className="text-muted-foreground">Analyze profit by bus, driver, and route</p>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold">Profitability Report</h1>
+            <p className="text-muted-foreground">Analyze profit by bus, driver, and route</p>
+          </div>
+          
+          {/* Date Filter */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <Filter className="h-4 w-4 text-muted-foreground" />
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" className={cn("justify-start text-left font-normal", !startDate && "text-muted-foreground")}>
+                  <CalendarIcon className="mr-2 h-4 w-4" />
+                  {startDate ? format(startDate, "dd MMM yyyy") : "Start date"}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="start">
+                <Calendar
+                  mode="single"
+                  selected={startDate}
+                  onSelect={(date) => date && setStartDate(date)}
+                  initialFocus
+                  className="p-3 pointer-events-auto"
+                />
+              </PopoverContent>
+            </Popover>
+            <span className="text-muted-foreground">to</span>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" className={cn("justify-start text-left font-normal", !endDate && "text-muted-foreground")}>
+                  <CalendarIcon className="mr-2 h-4 w-4" />
+                  {endDate ? format(endDate, "dd MMM yyyy") : "End date"}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="end">
+                <Calendar
+                  mode="single"
+                  selected={endDate}
+                  onSelect={(date) => date && setEndDate(date)}
+                  initialFocus
+                  className="p-3 pointer-events-auto"
+                />
+              </PopoverContent>
+            </Popover>
+            <Button 
+              variant="ghost" 
+              size="sm"
+              onClick={() => {
+                setStartDate(startOfMonth(new Date()));
+                setEndDate(endOfMonth(new Date()));
+              }}
+            >
+              This Month
+            </Button>
+          </div>
         </div>
 
         {/* Summary Cards */}
