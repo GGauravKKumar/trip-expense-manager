@@ -21,7 +21,8 @@ export default function DriverTrips() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedTrip, setSelectedTrip] = useState<Trip | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [waterStock, setWaterStock] = useState<StockItem | null>(null);
+  const [waterStock, setWaterStock] = useState<(StockItem & { unit_price?: number }) | null>(null);
+  const [waterCategoryId, setWaterCategoryId] = useState<string | null>(null);
   const [waterQuantity, setWaterQuantity] = useState('');
   const [odometerData, setOdometerData] = useState({
     start: '',
@@ -34,8 +35,22 @@ export default function DriverTrips() {
     if (user) {
       fetchTrips();
       fetchWaterStock();
+      fetchWaterCategory();
     }
   }, [user]);
+
+  async function fetchWaterCategory() {
+    const { data } = await supabase
+      .from('expense_categories')
+      .select('id')
+      .ilike('name', 'water')
+      .limit(1)
+      .single();
+    
+    if (data) {
+      setWaterCategoryId(data.id);
+    }
+  }
 
   async function fetchTrips() {
     const { data: profile } = await supabase.from('profiles').select('id').eq('user_id', user!.id).single();
@@ -61,7 +76,7 @@ export default function DriverTrips() {
       .single();
     
     if (data) {
-      setWaterStock(data as StockItem);
+      setWaterStock(data as StockItem & { unit_price?: number });
     }
   }
 
@@ -167,6 +182,25 @@ export default function DriverTrips() {
         toast.error('Failed to update water stock');
         setSubmitting(false);
         return;
+      }
+
+      // Create expense for water taken
+      if (waterCategoryId && waterStock.unit_price && waterStock.unit_price > 0) {
+        const waterCost = waterDifference * waterStock.unit_price;
+        const { error: expenseError } = await supabase.from('expenses').insert({
+          trip_id: selectedTrip.id,
+          category_id: waterCategoryId,
+          submitted_by: profile?.id,
+          amount: waterCost,
+          expense_date: new Date().toISOString().split('T')[0],
+          description: `Water: ${waterDifference} ${waterStock.unit} @ ₹${waterStock.unit_price}/${waterStock.unit}`,
+          status: 'approved', // Auto-approve water expenses from stock
+        });
+
+        if (expenseError) {
+          console.error('Failed to create water expense:', expenseError);
+          // Don't block the flow, just log the error
+        }
       }
     } else if (waterStock && waterDifference < 0) {
       // Returning water (reduced quantity) - add back to stock

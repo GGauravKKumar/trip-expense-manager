@@ -470,6 +470,7 @@ INSERT INTO public.expense_categories (name, description, icon) VALUES
     ('Repair', 'Vehicle repairs and maintenance', 'Wrench'),
     ('Traffic Fine', 'Traffic violations and penalties', 'AlertTriangle'),
     ('Parking', 'Parking charges', 'ParkingCircle'),
+    ('Water', 'Water bottles/boxes for trips', 'Droplets'),
     ('Miscellaneous', 'Other expenses', 'MoreHorizontal')
 ON CONFLICT DO NOTHING;
 
