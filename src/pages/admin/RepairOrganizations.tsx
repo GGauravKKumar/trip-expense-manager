@@ -27,6 +27,12 @@ interface RepairOrganization {
   created_at: string;
 }
 
+interface OrgUser {
+  full_name: string;
+  email: string | null;
+  user_id: string;
+}
+
 const defaultFormData = {
   org_code: '',
   org_name: '',
@@ -49,6 +55,7 @@ export default function RepairOrganizations() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [organizations, setOrganizations] = useState<RepairOrganization[]>([]);
+  const [orgUsers, setOrgUsers] = useState<Record<string, OrgUser[]>>({});
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formData, setFormData] = useState(defaultFormData);
@@ -66,18 +73,44 @@ export default function RepairOrganizations() {
   }, []);
 
   async function fetchOrganizations() {
-    const { data, error } = await supabase
-      // @ts-ignore - table exists after migration
-      .from('repair_organizations')
-      .select('*')
-      .order('org_name');
+    // Fetch organizations and their users in parallel
+    const [orgsResult, usersResult] = await Promise.all([
+      supabase
+        // @ts-ignore - table exists after migration
+        .from('repair_organizations')
+        .select('*')
+        .order('org_name'),
+      supabase
+        .from('profiles')
+        .select('user_id, full_name, repair_org_id')
+        .not('repair_org_id', 'is', null)
+    ]);
 
-    if (error) {
+    if (orgsResult.error) {
       toast.error('Failed to load organizations');
-      console.error(error);
+      console.error(orgsResult.error);
     } else {
-      setOrganizations(data || []);
+      setOrganizations(orgsResult.data || []);
     }
+
+    // Group users by org_id
+    if (usersResult.data) {
+      const usersByOrg: Record<string, OrgUser[]> = {};
+      for (const profile of usersResult.data) {
+        if (profile.repair_org_id) {
+          if (!usersByOrg[profile.repair_org_id]) {
+            usersByOrg[profile.repair_org_id] = [];
+          }
+          usersByOrg[profile.repair_org_id].push({
+            full_name: profile.full_name,
+            email: null, // We'll display full_name as primary identifier
+            user_id: profile.user_id,
+          });
+        }
+      }
+      setOrgUsers(usersByOrg);
+    }
+
     setLoading(false);
   }
 
@@ -225,6 +258,7 @@ export default function RepairOrganizations() {
       setUserDialogOpen(false);
       setUserFormData(defaultUserFormData);
       setSelectedOrg(null);
+      fetchOrganizations(); // Refresh to show new user
     } catch (error: unknown) {
       console.error(error);
       const errorMessage = error instanceof Error ? error.message : 'Failed to create user';
@@ -391,51 +425,66 @@ export default function RepairOrganizations() {
                   <TableRow>
                     <TableHead>Code</TableHead>
                     <TableHead>Organization Name</TableHead>
+                    <TableHead>Login User</TableHead>
                     <TableHead>Contact Person</TableHead>
                     <TableHead>Phone</TableHead>
-                    <TableHead>Email</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {organizations.map((org) => (
-                    <TableRow key={org.id}>
-                      <TableCell className="font-mono font-bold">{org.org_code}</TableCell>
-                      <TableCell>{org.org_name}</TableCell>
-                      <TableCell>{org.contact_person || '-'}</TableCell>
-                      <TableCell>{org.phone || '-'}</TableCell>
-                      <TableCell>{org.email || '-'}</TableCell>
-                      <TableCell>
-                        <Badge variant={org.is_active ? 'default' : 'secondary'}>
-                          {org.is_active ? 'Active' : 'Inactive'}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-2">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleCreateUser(org)}
-                            title="Create login user"
-                          >
-                            <UserPlus className="h-4 w-4" />
-                          </Button>
-                          <Button variant="ghost" size="icon" onClick={() => handleEdit(org)}>
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="text-destructive"
-                            onClick={() => setDeleteDialog({ open: true, org })}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                  {organizations.map((org) => {
+                    const users = orgUsers[org.id] || [];
+                    return (
+                      <TableRow key={org.id}>
+                        <TableCell className="font-mono font-bold">{org.org_code}</TableCell>
+                        <TableCell>{org.org_name}</TableCell>
+                        <TableCell>
+                          {users.length > 0 ? (
+                            <div className="space-y-1">
+                              {users.map((user) => (
+                                <Badge key={user.user_id} variant="outline" className="text-xs">
+                                  {user.full_name}
+                                </Badge>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground text-sm">No user</span>
+                          )}
+                        </TableCell>
+                        <TableCell>{org.contact_person || '-'}</TableCell>
+                        <TableCell>{org.phone || '-'}</TableCell>
+                        <TableCell>
+                          <Badge variant={org.is_active ? 'default' : 'secondary'}>
+                            {org.is_active ? 'Active' : 'Inactive'}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-2">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleCreateUser(org)}
+                              title={users.length > 0 ? "Add another user" : "Create login user"}
+                            >
+                              <UserPlus className="h-4 w-4" />
+                            </Button>
+                            <Button variant="ghost" size="icon" onClick={() => handleEdit(org)}>
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="text-destructive"
+                              onClick={() => setDeleteDialog({ open: true, org })}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             )}
