@@ -5,9 +5,9 @@ import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
 import { 
   Bus, Users, MapPin, Receipt, AlertTriangle, CheckCircle, Clock, 
-  TrendingUp, TrendingDown, Fuel, Calendar, FileWarning 
+  TrendingUp, TrendingDown, Fuel, Calendar, FileWarning, IdCard
 } from 'lucide-react';
-import { format, addDays, isWithinInterval, parseISO } from 'date-fns';
+import { format, addDays, isWithinInterval, parseISO, differenceInDays } from 'date-fns';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
   PieChart, Pie, Cell, LineChart, Line, Legend 
@@ -31,6 +31,14 @@ interface BusExpiry {
   bus_name: string | null;
   type: 'insurance' | 'puc' | 'fitness';
   expiry_date: string;
+  days_remaining: number;
+}
+
+interface DriverLicenseExpiry {
+  id: string;
+  full_name: string;
+  license_number: string | null;
+  license_expiry: string;
   days_remaining: number;
 }
 
@@ -73,6 +81,7 @@ export default function AdminDashboard() {
     totalExpenseAmount: 0,
   });
   const [expiringBuses, setExpiringBuses] = useState<BusExpiry[]>([]);
+  const [expiringLicenses, setExpiringLicenses] = useState<DriverLicenseExpiry[]>([]);
   const [profitData, setProfitData] = useState<ProfitData>({
     totalRevenue: 0,
     totalExpense: 0,
@@ -93,6 +102,7 @@ export default function AdminDashboard() {
     await Promise.all([
       fetchStats(),
       fetchExpiringBuses(),
+      fetchExpiringLicenses(),
       fetchProfitData(),
       fetchRecentActivity(),
     ]);
@@ -168,6 +178,38 @@ export default function AdminDashboard() {
     });
 
     setExpiringBuses(expiries.sort((a, b) => a.days_remaining - b.days_remaining));
+  }
+
+  async function fetchExpiringLicenses() {
+    const { data: drivers } = await supabase
+      .from('profiles')
+      .select('id, full_name, license_number, license_expiry')
+      .not('license_expiry', 'is', null);
+
+    if (!drivers) return;
+
+    const today = new Date();
+    const expiring: DriverLicenseExpiry[] = [];
+
+    drivers.forEach((driver) => {
+      if (!driver.license_expiry) return;
+      
+      const expiryDate = parseISO(driver.license_expiry);
+      const daysRemaining = differenceInDays(expiryDate, today);
+      
+      // Show licenses expiring within 30 days or already expired
+      if (daysRemaining <= 30) {
+        expiring.push({
+          id: driver.id,
+          full_name: driver.full_name,
+          license_number: driver.license_number,
+          license_expiry: driver.license_expiry,
+          days_remaining: daysRemaining,
+        });
+      }
+    });
+
+    setExpiringLicenses(expiring.sort((a, b) => a.days_remaining - b.days_remaining));
   }
 
   async function fetchProfitData() {
@@ -376,13 +418,13 @@ export default function AdminDashboard() {
           <p className="text-muted-foreground">Overview of your fleet operations</p>
         </div>
 
-        {/* Expiry Alerts */}
+        {/* Bus Document Expiry Alerts */}
         {expiringBuses.length > 0 && (
           <Card className="border-red-200 bg-red-50">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-red-800 flex items-center gap-2">
                 <FileWarning className="h-4 w-4" />
-                Document Expiry Alerts ({expiringBuses.length})
+                Bus Document Expiry Alerts ({expiringBuses.length})
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
@@ -409,6 +451,45 @@ export default function AdminDashboard() {
               {expiringBuses.length > 5 && (
                 <Link to="/admin/buses" className="text-sm text-red-600 hover:underline">
                   View all {expiringBuses.length} alerts →
+                </Link>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Driver License Expiry Alerts */}
+        {expiringLicenses.length > 0 && (
+          <Card className="border-orange-200 bg-orange-50">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-orange-800 flex items-center gap-2">
+                <IdCard className="h-4 w-4" />
+                Driver License Expiry Alerts ({expiringLicenses.length})
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {expiringLicenses.slice(0, 5).map((driver, idx) => (
+                <div key={`${driver.id}-${idx}`} className="flex items-center justify-between p-2 bg-white rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <Users className="h-4 w-4 text-muted-foreground" />
+                    <span className="font-medium">{driver.full_name}</span>
+                    {driver.license_number && (
+                      <span className="text-xs text-muted-foreground">({driver.license_number})</span>
+                    )}
+                  </div>
+                  <div className="text-sm">
+                    {driver.days_remaining <= 0 ? (
+                      <span className="text-red-600 font-medium">Expired!</span>
+                    ) : (
+                      <span className={driver.days_remaining <= 7 ? 'text-red-600' : 'text-orange-600'}>
+                        {driver.days_remaining} days left
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))}
+              {expiringLicenses.length > 5 && (
+                <Link to="/admin/drivers" className="text-sm text-orange-600 hover:underline">
+                  View all {expiringLicenses.length} alerts →
                 </Link>
               )}
             </CardContent>

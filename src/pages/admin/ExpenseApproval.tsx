@@ -12,6 +12,8 @@ import { useAuth } from '@/hooks/useAuth';
 import { Check, X, Eye, Loader2, FileText, Download } from 'lucide-react';
 import { toast } from 'sonner';
 import { exportToExcel, formatCurrency, formatDate } from '@/lib/exportUtils';
+import { useTableFilters } from '@/hooks/useTableFilters';
+import { SearchFilterBar, TablePagination } from '@/components/TableFilters';
 
 export default function ExpenseApproval() {
   const { user } = useAuth();
@@ -21,11 +23,33 @@ export default function ExpenseApproval() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [remarks, setRemarks] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [filter, setFilter] = useState<ExpenseStatus | 'all'>('pending');
+  const [statusFilter, setStatusFilter] = useState<ExpenseStatus | 'all'>('pending');
+
+  // Table filters
+  const {
+    searchQuery,
+    setSearchQuery,
+    currentPage,
+    setCurrentPage,
+    pageSize,
+    setPageSize,
+    paginatedData,
+    totalPages,
+    showingFrom,
+    showingTo,
+    totalCount,
+  } = useTableFilters({
+    data: expenses,
+    searchFields: [
+      (exp) => (exp.trip as any)?.trip_number,
+      (exp) => (exp.submitter as any)?.full_name,
+      (exp) => (exp.category as any)?.name,
+    ],
+  });
 
   useEffect(() => {
     fetchExpenses();
-  }, [filter]);
+  }, [statusFilter]);
 
   async function fetchExpenses() {
     let query = supabase
@@ -38,8 +62,8 @@ export default function ExpenseApproval() {
       `)
       .order('created_at', { ascending: false });
 
-    if (filter !== 'all') {
-      query = query.eq('status', filter);
+    if (statusFilter !== 'all') {
+      query = query.eq('status', statusFilter);
     }
 
     const { data, error } = await query;
@@ -158,7 +182,7 @@ export default function ExpenseApproval() {
         { header: 'Status', key: 'status' },
         { header: 'Admin Remarks', key: 'admin_remarks', format: (v) => v || '-' },
       ],
-      `expenses-${filter}-report`
+      `expenses-${statusFilter}-report`
     );
   }
 
@@ -174,9 +198,9 @@ export default function ExpenseApproval() {
             {(['all', 'pending', 'approved', 'denied'] as const).map((status) => (
               <Button
                 key={status}
-                variant={filter === status ? 'default' : 'outline'}
+                variant={statusFilter === status ? 'default' : 'outline'}
                 size="sm"
-                onClick={() => setFilter(status)}
+                onClick={() => setStatusFilter(status)}
               >
                 {status.charAt(0).toUpperCase() + status.slice(1)}
               </Button>
@@ -187,6 +211,13 @@ export default function ExpenseApproval() {
             </Button>
           </div>
         </div>
+
+        {/* Search Bar */}
+        <SearchFilterBar
+          searchPlaceholder="Search by trip number, driver, or category..."
+          searchValue={searchQuery}
+          onSearchChange={setSearchQuery}
+        />
 
         <Card>
           <CardContent className="p-0">
@@ -210,14 +241,14 @@ export default function ExpenseApproval() {
                       <Loader2 className="h-6 w-6 animate-spin mx-auto" />
                     </TableCell>
                   </TableRow>
-                ) : expenses.length === 0 ? (
+                ) : paginatedData.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
-                      No expenses found
+                      {expenses.length === 0 ? 'No expenses found' : 'No expenses match your search'}
                     </TableCell>
                   </TableRow>
                 ) : (
-                  expenses.map((expense) => (
+                  paginatedData.map((expense) => (
                     <TableRow key={expense.id}>
                       <TableCell className="font-medium">
                         {(expense.trip as any)?.trip_number}
@@ -254,6 +285,17 @@ export default function ExpenseApproval() {
                 )}
               </TableBody>
             </Table>
+            <TablePagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              pageSize={pageSize}
+              showingFrom={showingFrom}
+              showingTo={showingTo}
+              totalCount={totalCount}
+              onPageChange={setCurrentPage}
+              onPageSizeChange={setPageSize}
+              itemName="expenses"
+            />
           </CardContent>
         </Card>
 

@@ -13,6 +13,8 @@ import { Plus, Pencil, Loader2, Receipt, Download } from 'lucide-react';
 import { toast } from 'sonner';
 import RouteExpensesDialog from '@/components/RouteExpensesDialog';
 import { exportToExcel } from '@/lib/exportUtils';
+import { useTableFilters } from '@/hooks/useTableFilters';
+import { SearchFilterBar, TablePagination } from '@/components/TableFilters';
 
 export default function RouteManagement() {
   const [routes, setRoutes] = useState<Route[]>([]);
@@ -32,6 +34,30 @@ export default function RouteManagement() {
     estimated_duration_hours: '',
   });
   const [submitting, setSubmitting] = useState(false);
+
+  // Table filters
+  const {
+    searchQuery,
+    setSearchQuery,
+    currentPage,
+    setCurrentPage,
+    pageSize,
+    setPageSize,
+    paginatedData,
+    totalPages,
+    showingFrom,
+    showingTo,
+    totalCount,
+  } = useTableFilters({
+    data: routes,
+    searchFields: [
+      'route_name',
+      'from_address',
+      'to_address',
+      (route) => (route.from_state as any)?.state_name,
+      (route) => (route.to_state as any)?.state_name,
+    ],
+  });
 
   function handleViewExpenses(route: Route) {
     setSelectedRoute(route);
@@ -299,6 +325,13 @@ export default function RouteManagement() {
           </div>
         </div>
 
+        {/* Search Bar */}
+        <SearchFilterBar
+          searchPlaceholder="Search by route name, state, or address..."
+          searchValue={searchQuery}
+          onSearchChange={setSearchQuery}
+        />
+
         <Card>
           <CardContent className="p-0">
             <Table>
@@ -319,14 +352,14 @@ export default function RouteManagement() {
                       <Loader2 className="h-6 w-6 animate-spin mx-auto" />
                     </TableCell>
                   </TableRow>
-                ) : routes.length === 0 ? (
+                ) : paginatedData.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
-                      No routes added yet
+                      {routes.length === 0 ? 'No routes added yet' : 'No routes match your search'}
                     </TableCell>
                   </TableRow>
                 ) : (
-                  routes.map((route) => (
+                  paginatedData.map((route) => (
                     <TableRow key={route.id}>
                       <TableCell className="font-medium">{route.route_name}</TableCell>
                       <TableCell>
@@ -364,6 +397,17 @@ export default function RouteManagement() {
                 )}
               </TableBody>
             </Table>
+            <TablePagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              pageSize={pageSize}
+              showingFrom={showingFrom}
+              showingTo={showingTo}
+              totalCount={totalCount}
+              onPageChange={setCurrentPage}
+              onPageSizeChange={setPageSize}
+              itemName="routes"
+            />
           </CardContent>
         </Card>
 
