@@ -136,21 +136,38 @@ export default function TripRevenueDialog({ open, onOpenChange, trip, onSuccess 
 
     setSubmitting(true);
 
+    // Calculate totals
+    const outwardTotalValue =
+      (parseFloat(formData.revenue_cash) || 0) +
+      (parseFloat(formData.revenue_online) || 0) +
+      (parseFloat(formData.revenue_paytm) || 0) +
+      (parseFloat(formData.revenue_others) || 0) +
+      (parseFloat(formData.revenue_agent) || 0);
+
     const updateData: Record<string, number> = {
       revenue_cash: parseFloat(formData.revenue_cash) || 0,
       revenue_online: parseFloat(formData.revenue_online) || 0,
       revenue_paytm: parseFloat(formData.revenue_paytm) || 0,
       revenue_others: parseFloat(formData.revenue_others) || 0,
       revenue_agent: parseFloat(formData.revenue_agent) || 0,
+      total_revenue: outwardTotalValue,
       gst_percentage: gstPercentage,
     };
 
     if (trip.trip_type === 'two_way') {
+      const returnTotalValue =
+        (parseFloat(formData.return_revenue_cash) || 0) +
+        (parseFloat(formData.return_revenue_online) || 0) +
+        (parseFloat(formData.return_revenue_paytm) || 0) +
+        (parseFloat(formData.return_revenue_others) || 0) +
+        (parseFloat(formData.return_revenue_agent) || 0);
+
       updateData.return_revenue_cash = parseFloat(formData.return_revenue_cash) || 0;
       updateData.return_revenue_online = parseFloat(formData.return_revenue_online) || 0;
       updateData.return_revenue_paytm = parseFloat(formData.return_revenue_paytm) || 0;
       updateData.return_revenue_others = parseFloat(formData.return_revenue_others) || 0;
       updateData.return_revenue_agent = parseFloat(formData.return_revenue_agent) || 0;
+      updateData.return_total_revenue = returnTotalValue;
     }
 
     const { error } = await supabase
