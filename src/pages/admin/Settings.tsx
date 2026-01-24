@@ -8,6 +8,7 @@ import { Separator } from '@/components/ui/separator';
 import { supabase } from '@/integrations/supabase/client';
 import { Loader2, Save, Settings as SettingsIcon, Building2, Fuel, Bell } from 'lucide-react';
 import { toast } from 'sonner';
+import ChangePasswordCard from '@/components/ChangePasswordCard';
 
 interface SettingsData {
   fuel_price_per_liter: string;
@@ -249,6 +250,9 @@ export default function Settings() {
               </div>
             </CardContent>
           </Card>
+
+          {/* Password Change */}
+          <ChangePasswordCard />
         </div>
       </div>
     </DashboardLayout>
