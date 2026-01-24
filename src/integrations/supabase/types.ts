@@ -415,6 +415,7 @@ export type Database = {
           license_expiry: string | null
           license_number: string | null
           phone: string | null
+          repair_org_id: string | null
           updated_at: string
           user_id: string
         }
@@ -427,6 +428,7 @@ export type Database = {
           license_expiry?: string | null
           license_number?: string | null
           phone?: string | null
+          repair_org_id?: string | null
           updated_at?: string
           user_id: string
         }
@@ -439,10 +441,148 @@ export type Database = {
           license_expiry?: string | null
           license_number?: string | null
           phone?: string | null
+          repair_org_id?: string | null
           updated_at?: string
           user_id?: string
         }
+        Relationships: [
+          {
+            foreignKeyName: "profiles_repair_org_id_fkey"
+            columns: ["repair_org_id"]
+            isOneToOne: false
+            referencedRelation: "repair_organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      repair_organizations: {
+        Row: {
+          address: string | null
+          contact_person: string | null
+          created_at: string
+          email: string | null
+          id: string
+          is_active: boolean
+          org_code: string
+          org_name: string
+          phone: string | null
+          updated_at: string
+        }
+        Insert: {
+          address?: string | null
+          contact_person?: string | null
+          created_at?: string
+          email?: string | null
+          id?: string
+          is_active?: boolean
+          org_code: string
+          org_name: string
+          phone?: string | null
+          updated_at?: string
+        }
+        Update: {
+          address?: string | null
+          contact_person?: string | null
+          created_at?: string
+          email?: string | null
+          id?: string
+          is_active?: boolean
+          org_code?: string
+          org_name?: string
+          phone?: string | null
+          updated_at?: string
+        }
         Relationships: []
+      }
+      repair_records: {
+        Row: {
+          approved_at: string | null
+          approved_by: string | null
+          bus_id: string | null
+          bus_registration: string
+          created_at: string
+          description: string
+          id: string
+          labor_cost: number | null
+          notes: string | null
+          organization_id: string
+          parts_changed: string | null
+          parts_cost: number | null
+          photo_after_url: string | null
+          photo_before_url: string | null
+          repair_date: string
+          repair_number: string
+          repair_type: string
+          status: string
+          submitted_by: string | null
+          total_cost: number | null
+          updated_at: string
+          warranty_days: number | null
+        }
+        Insert: {
+          approved_at?: string | null
+          approved_by?: string | null
+          bus_id?: string | null
+          bus_registration: string
+          created_at?: string
+          description: string
+          id?: string
+          labor_cost?: number | null
+          notes?: string | null
+          organization_id: string
+          parts_changed?: string | null
+          parts_cost?: number | null
+          photo_after_url?: string | null
+          photo_before_url?: string | null
+          repair_date?: string
+          repair_number: string
+          repair_type: string
+          status?: string
+          submitted_by?: string | null
+          total_cost?: number | null
+          updated_at?: string
+          warranty_days?: number | null
+        }
+        Update: {
+          approved_at?: string | null
+          approved_by?: string | null
+          bus_id?: string | null
+          bus_registration?: string
+          created_at?: string
+          description?: string
+          id?: string
+          labor_cost?: number | null
+          notes?: string | null
+          organization_id?: string
+          parts_changed?: string | null
+          parts_cost?: number | null
+          photo_after_url?: string | null
+          photo_before_url?: string | null
+          repair_date?: string
+          repair_number?: string
+          repair_type?: string
+          status?: string
+          submitted_by?: string | null
+          total_cost?: number | null
+          updated_at?: string
+          warranty_days?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "repair_records_bus_id_fkey"
+            columns: ["bus_id"]
+            isOneToOne: false
+            referencedRelation: "buses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "repair_records_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "repair_organizations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       routes: {
         Row: {
@@ -765,7 +905,7 @@ export type Database = {
       }
     }
     Enums: {
-      app_role: "admin" | "driver"
+      app_role: "admin" | "driver" | "repair_org"
       bus_status: "active" | "maintenance" | "inactive"
       expense_status: "pending" | "approved" | "denied"
       ownership_type: "owned" | "partnership"
@@ -899,7 +1039,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      app_role: ["admin", "driver"],
+      app_role: ["admin", "driver", "repair_org"],
       bus_status: ["active", "maintenance", "inactive"],
       expense_status: ["pending", "approved", "denied"],
       ownership_type: ["owned", "partnership"],
