@@ -22,7 +22,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { supabase } from '@/integrations/supabase/client';
 import { Bus, Route, Profile, BusSchedule } from '@/types/database';
-import { Plus, Pencil, Loader2, Trash2, Calendar, Clock, ArrowLeftRight } from 'lucide-react';
+import { Plus, Pencil, Loader2, Trash2, Calendar, Clock, ArrowLeftRight, Play } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTableFilters } from '@/hooks/useTableFilters';
 import { SearchFilterBar, TablePagination } from '@/components/TableFilters';
@@ -64,6 +64,9 @@ export default function ScheduleManagement() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deletingSchedule, setDeletingSchedule] = useState<BusSchedule | null>(null);
   const [deleting, setDeleting] = useState(false);
+
+  // Generate trips state
+  const [generating, setGenerating] = useState(false);
 
   // Table filters
   const {
@@ -275,6 +278,28 @@ export default function ScheduleManagement() {
     return days.map((d) => DAYS_OF_WEEK.find((day) => day.value === d)?.label).join(', ');
   }
 
+  async function handleGenerateTrips() {
+    setGenerating(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('generate-scheduled-trips');
+      
+      if (error) throw error;
+      
+      if (data.tripsCreated > 0) {
+        toast.success(`Created ${data.tripsCreated} trips from ${data.schedulesProcessed} schedules`);
+      } else if (data.schedulesProcessed === 0) {
+        toast.info('No active schedules found for today');
+      } else {
+        toast.info('All trips for today already exist');
+      }
+    } catch (error) {
+      console.error('Error generating trips:', error);
+      toast.error('Failed to generate trips');
+    } finally {
+      setGenerating(false);
+    }
+  }
+
   return (
     <DashboardLayout>
       <div className="space-y-6">
@@ -283,13 +308,22 @@ export default function ScheduleManagement() {
             <h1 className="text-2xl font-bold">Schedule Management</h1>
             <p className="text-muted-foreground">Manage recurring bus schedules for fixed routes</p>
           </div>
-          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-            <DialogTrigger asChild>
-              <Button onClick={handleAddNew}>
-                <Plus className="h-4 w-4 mr-2" />
-                Add Schedule
-              </Button>
-            </DialogTrigger>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={handleGenerateTrips} disabled={generating}>
+              {generating ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Play className="h-4 w-4 mr-2" />
+              )}
+              {generating ? 'Generating...' : "Generate Today's Trips"}
+            </Button>
+            <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+              <DialogTrigger asChild>
+                <Button onClick={handleAddNew}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Schedule
+                </Button>
+              </DialogTrigger>
             <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>{editingSchedule ? 'Edit Schedule' : 'Add New Schedule'}</DialogTitle>
@@ -457,6 +491,7 @@ export default function ScheduleManagement() {
               </form>
             </DialogContent>
           </Dialog>
+          </div>
         </div>
 
         {/* Search and Filter Bar */}
