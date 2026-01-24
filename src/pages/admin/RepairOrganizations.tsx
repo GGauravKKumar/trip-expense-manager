@@ -11,8 +11,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Switch } from '@/components/ui/switch';
 import { supabase } from '@/integrations/supabase/client';
-import { Loader2, Plus, Building2, Edit, Trash2, Key } from 'lucide-react';
+import { Loader2, Plus, Building2, Edit, Trash2, Key, UserPlus } from 'lucide-react';
 import { toast } from 'sonner';
+import { useAuth } from '@/hooks/useAuth';
 
 interface RepairOrganization {
   id: string;
@@ -36,7 +37,15 @@ const defaultFormData = {
   is_active: true,
 };
 
+const defaultUserFormData = {
+  email: '',
+  password: '',
+  full_name: '',
+  phone: '',
+};
+
 export default function RepairOrganizations() {
+  const { session } = useAuth();
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [organizations, setOrganizations] = useState<RepairOrganization[]>([]);
@@ -47,6 +56,10 @@ export default function RepairOrganizations() {
     open: false,
     org: null,
   });
+  const [userDialogOpen, setUserDialogOpen] = useState(false);
+  const [selectedOrg, setSelectedOrg] = useState<RepairOrganization | null>(null);
+  const [userFormData, setUserFormData] = useState(defaultUserFormData);
+  const [creatingUser, setCreatingUser] = useState(false);
 
   useEffect(() => {
     fetchOrganizations();
@@ -166,6 +179,59 @@ export default function RepairOrganizations() {
     }
 
     setDeleteDialog({ open: false, org: null });
+  }
+
+  function handleCreateUser(org: RepairOrganization) {
+    setSelectedOrg(org);
+    setUserFormData(defaultUserFormData);
+    setUserDialogOpen(true);
+  }
+
+  async function handleSubmitUser(e: React.FormEvent) {
+    e.preventDefault();
+    if (!selectedOrg || !userFormData.email || !userFormData.password || !userFormData.full_name) {
+      toast.error('Please fill in all required fields');
+      return;
+    }
+
+    setCreatingUser(true);
+
+    try {
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-repair-user`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${session?.access_token}`,
+          },
+          body: JSON.stringify({
+            email: userFormData.email,
+            password: userFormData.password,
+            full_name: userFormData.full_name,
+            phone: userFormData.phone || undefined,
+            organization_id: selectedOrg.id,
+          }),
+        }
+      );
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to create user');
+      }
+
+      toast.success(`User created for ${selectedOrg.org_name}`);
+      setUserDialogOpen(false);
+      setUserFormData(defaultUserFormData);
+      setSelectedOrg(null);
+    } catch (error: unknown) {
+      console.error(error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to create user';
+      toast.error(errorMessage);
+    }
+
+    setCreatingUser(false);
   }
 
   if (loading) {
@@ -347,6 +413,14 @@ export default function RepairOrganizations() {
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleCreateUser(org)}
+                            title="Create login user"
+                          >
+                            <UserPlus className="h-4 w-4" />
+                          </Button>
                           <Button variant="ghost" size="icon" onClick={() => handleEdit(org)}>
                             <Edit className="h-4 w-4" />
                           </Button>
@@ -386,6 +460,72 @@ export default function RepairOrganizations() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Create User Dialog */}
+      <Dialog open={userDialogOpen} onOpenChange={setUserDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Create Login User for {selectedOrg?.org_name}</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleSubmitUser} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="user_email">Email *</Label>
+              <Input
+                id="user_email"
+                type="email"
+                value={userFormData.email}
+                onChange={(e) => setUserFormData((prev) => ({ ...prev, email: e.target.value }))}
+                placeholder="user@repair-org.com"
+                required
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="user_password">Password *</Label>
+              <Input
+                id="user_password"
+                type="password"
+                value={userFormData.password}
+                onChange={(e) => setUserFormData((prev) => ({ ...prev, password: e.target.value }))}
+                placeholder="Min 6 characters"
+                minLength={6}
+                required
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="user_full_name">Full Name *</Label>
+              <Input
+                id="user_full_name"
+                value={userFormData.full_name}
+                onChange={(e) => setUserFormData((prev) => ({ ...prev, full_name: e.target.value }))}
+                placeholder="John Doe"
+                required
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="user_phone">Phone</Label>
+              <Input
+                id="user_phone"
+                value={userFormData.phone}
+                onChange={(e) => setUserFormData((prev) => ({ ...prev, phone: e.target.value }))}
+                placeholder="+91 98765 43210"
+              />
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => setUserDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={creatingUser}>
+                {creatingUser && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                Create User
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
   );
 }
