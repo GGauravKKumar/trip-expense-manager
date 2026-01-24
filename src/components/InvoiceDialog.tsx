@@ -17,6 +17,8 @@ interface LineItemForm {
   quantity: number;
   unit_price: number;
   is_deduction: boolean;
+  gst_percentage: number;
+  rate_includes_gst: boolean;
 }
 
 interface Props {
@@ -37,12 +39,11 @@ export default function InvoiceDialog({ open, onOpenChange, invoice, onSuccess }
     customer_phone: '',
     customer_gst: '',
     invoice_type: 'customer' as InvoiceType,
-    gst_percentage: 18,
     notes: '',
     terms: '',
   });
   const [lineItems, setLineItems] = useState<LineItemForm[]>([
-    { description: '', quantity: 1, unit_price: 0, is_deduction: false },
+    { description: '', quantity: 1, unit_price: 0, is_deduction: false, gst_percentage: 18, rate_includes_gst: false },
   ]);
 
   useEffect(() => {
@@ -56,7 +57,6 @@ export default function InvoiceDialog({ open, onOpenChange, invoice, onSuccess }
         customer_phone: invoice.customer_phone || '',
         customer_gst: invoice.customer_gst || '',
         invoice_type: invoice.invoice_type,
-        gst_percentage: invoice.subtotal > 0 ? (invoice.gst_amount / invoice.subtotal) * 100 : 18,
         notes: invoice.notes || '',
         terms: invoice.terms || '',
       });
@@ -71,11 +71,10 @@ export default function InvoiceDialog({ open, onOpenChange, invoice, onSuccess }
         customer_phone: '',
         customer_gst: '',
         invoice_type: 'customer',
-        gst_percentage: 18,
         notes: '',
         terms: '',
       });
-      setLineItems([{ description: '', quantity: 1, unit_price: 0, is_deduction: false }]);
+      setLineItems([{ description: '', quantity: 1, unit_price: 0, is_deduction: false, gst_percentage: 18, rate_includes_gst: false }]);
     }
   }, [open, invoice]);
 
@@ -97,6 +96,8 @@ export default function InvoiceDialog({ open, onOpenChange, invoice, onSuccess }
           quantity: item.quantity,
           unit_price: item.unit_price,
           is_deduction: item.is_deduction,
+          gst_percentage: (item as any).gst_percentage ?? 18,
+          rate_includes_gst: (item as any).rate_includes_gst ?? false,
         }))
       );
     }
@@ -104,7 +105,7 @@ export default function InvoiceDialog({ open, onOpenChange, invoice, onSuccess }
   }
 
   function addLineItem() {
-    setLineItems([...lineItems, { description: '', quantity: 1, unit_price: 0, is_deduction: false }]);
+    setLineItems([...lineItems, { description: '', quantity: 1, unit_price: 0, is_deduction: false, gst_percentage: 18, rate_includes_gst: false }]);
   }
 
   function removeLineItem(index: number) {
@@ -119,22 +120,42 @@ export default function InvoiceDialog({ open, onOpenChange, invoice, onSuccess }
     setLineItems(updated);
   }
 
+  function calculateLineItemAmounts(item: LineItemForm) {
+    const rawAmount = item.quantity * item.unit_price;
+    
+    if (item.rate_includes_gst) {
+      // Rate includes GST, so extract base amount and GST
+      const baseAmount = rawAmount / (1 + item.gst_percentage / 100);
+      const gstAmount = rawAmount - baseAmount;
+      return { baseAmount, gstAmount, totalAmount: rawAmount };
+    } else {
+      // Rate excludes GST, so calculate GST on top
+      const gstAmount = rawAmount * (item.gst_percentage / 100);
+      return { baseAmount: rawAmount, gstAmount, totalAmount: rawAmount + gstAmount };
+    }
+  }
+
   function calculateTotals() {
-    let positiveTotal = 0;
-    let deductionsTotal = 0;
+    let positiveBaseTotal = 0;
+    let positiveGstTotal = 0;
+    let deductionsBaseTotal = 0;
+    let deductionsGstTotal = 0;
 
     lineItems.forEach((item) => {
-      const amount = item.quantity * item.unit_price;
+      const { baseAmount, gstAmount } = calculateLineItemAmounts(item);
       if (item.is_deduction) {
-        deductionsTotal += amount;
+        deductionsBaseTotal += baseAmount;
+        deductionsGstTotal += gstAmount;
       } else {
-        positiveTotal += amount;
+        positiveBaseTotal += baseAmount;
+        positiveGstTotal += gstAmount;
       }
     });
 
-    const subtotal = positiveTotal - deductionsTotal;
-    const gstAmount = subtotal * (formData.gst_percentage / 100);
+    const subtotal = positiveBaseTotal - deductionsBaseTotal;
+    const gstAmount = positiveGstTotal - deductionsGstTotal;
     const totalAmount = subtotal + gstAmount;
+    const deductionsTotal = deductionsBaseTotal + deductionsGstTotal;
 
     return { subtotal, gstAmount, totalAmount, deductionsTotal };
   }
@@ -202,14 +223,21 @@ export default function InvoiceDialog({ open, onOpenChange, invoice, onSuccess }
 
         const lineItemsToInsert = lineItems
           .filter((item) => item.description)
-          .map((item) => ({
-            invoice_id: invoice.id,
-            description: item.description,
-            quantity: item.quantity,
-            unit_price: item.unit_price,
-            amount: item.quantity * item.unit_price,
-            is_deduction: item.is_deduction,
-          }));
+          .map((item) => {
+            const amounts = calculateLineItemAmounts(item);
+            return {
+              invoice_id: invoice.id,
+              description: item.description,
+              quantity: item.quantity,
+              unit_price: item.unit_price,
+              amount: amounts.totalAmount,
+              is_deduction: item.is_deduction,
+              gst_percentage: item.gst_percentage,
+              rate_includes_gst: item.rate_includes_gst,
+              base_amount: amounts.baseAmount,
+              gst_amount: amounts.gstAmount,
+            };
+          });
 
         if (lineItemsToInsert.length > 0) {
           const { error: itemsError } = await supabase.from('invoice_line_items').insert(lineItemsToInsert);
@@ -249,14 +277,21 @@ export default function InvoiceDialog({ open, onOpenChange, invoice, onSuccess }
         // Insert line items
         const lineItemsToInsert = lineItems
           .filter((item) => item.description)
-          .map((item) => ({
-            invoice_id: newInvoice.id,
-            description: item.description,
-            quantity: item.quantity,
-            unit_price: item.unit_price,
-            amount: item.quantity * item.unit_price,
-            is_deduction: item.is_deduction,
-          }));
+          .map((item) => {
+            const amounts = calculateLineItemAmounts(item);
+            return {
+              invoice_id: newInvoice.id,
+              description: item.description,
+              quantity: item.quantity,
+              unit_price: item.unit_price,
+              amount: amounts.totalAmount,
+              is_deduction: item.is_deduction,
+              gst_percentage: item.gst_percentage,
+              rate_includes_gst: item.rate_includes_gst,
+              base_amount: amounts.baseAmount,
+              gst_amount: amounts.gstAmount,
+            };
+          });
 
         if (lineItemsToInsert.length > 0) {
           const { error: itemsError } = await supabase.from('invoice_line_items').insert(lineItemsToInsert);
@@ -387,127 +422,138 @@ export default function InvoiceDialog({ open, onOpenChange, invoice, onSuccess }
               </div>
             ) : (
               <div className="space-y-3">
-                {lineItems.map((item, index) => (
-                  <div
-                    key={index}
-                    className={`grid gap-3 p-3 rounded-lg border ${item.is_deduction ? 'bg-destructive/5 border-destructive/20' : ''}`}
-                  >
-                    <div className="grid gap-3 md:grid-cols-12 items-end">
-                      <div className="md:col-span-5 space-y-1">
-                        <Label className="text-xs">Description</Label>
-                        <Input
-                          value={item.description}
-                          onChange={(e) => updateLineItem(index, 'description', e.target.value)}
-                          placeholder="Item description"
-                        />
-                      </div>
-                      <div className="md:col-span-2 space-y-1">
-                        <Label className="text-xs">Qty</Label>
-                        <Input
-                          type="number"
-                          min="1"
-                          value={item.quantity}
-                          onChange={(e) => updateLineItem(index, 'quantity', parseFloat(e.target.value) || 1)}
-                        />
-                      </div>
-                      <div className="md:col-span-2 space-y-1">
-                        <Label className="text-xs">Rate (₹)</Label>
-                        <Input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={item.unit_price}
-                          onChange={(e) => updateLineItem(index, 'unit_price', parseFloat(e.target.value) || 0)}
-                        />
-                      </div>
-                      <div className="md:col-span-2 space-y-1">
-                        <Label className="text-xs">Amount</Label>
-                        <div className={`p-2 text-sm font-medium ${item.is_deduction ? 'text-destructive' : ''}`}>
-                          {item.is_deduction ? '-' : ''}₹{(item.quantity * item.unit_price).toLocaleString('en-IN')}
+                {lineItems.map((item, index) => {
+                  const { baseAmount, gstAmount, totalAmount: lineTotal } = calculateLineItemAmounts(item);
+                  return (
+                    <div
+                      key={index}
+                      className={`space-y-3 p-3 rounded-lg border ${item.is_deduction ? 'bg-destructive/5 border-destructive/20' : ''}`}
+                    >
+                      <div className="grid gap-3 md:grid-cols-12 items-end">
+                        <div className="md:col-span-4 space-y-1">
+                          <Label className="text-xs">Description</Label>
+                          <Input
+                            value={item.description}
+                            onChange={(e) => updateLineItem(index, 'description', e.target.value)}
+                            placeholder="Item description"
+                          />
+                        </div>
+                        <div className="md:col-span-1 space-y-1">
+                          <Label className="text-xs">Qty</Label>
+                          <Input
+                            type="number"
+                            min="1"
+                            value={item.quantity}
+                            onChange={(e) => updateLineItem(index, 'quantity', parseFloat(e.target.value) || 1)}
+                          />
+                        </div>
+                        <div className="md:col-span-2 space-y-1">
+                          <Label className="text-xs">Rate (₹)</Label>
+                          <Input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={item.unit_price}
+                            onChange={(e) => updateLineItem(index, 'unit_price', parseFloat(e.target.value) || 0)}
+                          />
+                        </div>
+                        <div className="md:col-span-1 space-y-1">
+                          <Label className="text-xs">GST %</Label>
+                          <Input
+                            type="number"
+                            min="0"
+                            max="100"
+                            value={item.gst_percentage}
+                            onChange={(e) => updateLineItem(index, 'gst_percentage', parseFloat(e.target.value) || 0)}
+                          />
+                        </div>
+                        <div className="md:col-span-3 space-y-1">
+                          <Label className="text-xs">Amount (Base + GST)</Label>
+                          <div className={`p-2 text-sm font-medium ${item.is_deduction ? 'text-destructive' : ''}`}>
+                            {item.is_deduction ? '-' : ''}₹{baseAmount.toLocaleString('en-IN', { maximumFractionDigits: 2 })} + ₹{gstAmount.toLocaleString('en-IN', { maximumFractionDigits: 2 })} = ₹{lineTotal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                          </div>
+                        </div>
+                        <div className="md:col-span-1">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => removeLineItem(index)}
+                            disabled={lineItems.length === 1}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
                         </div>
                       </div>
-                      <div className="md:col-span-1">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => removeLineItem(index)}
-                          disabled={lineItems.length === 1}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                      <div className="flex flex-wrap items-center gap-4">
+                        <div className="flex items-center gap-2">
+                          <Checkbox
+                            id={`gst-inclusive-${index}`}
+                            checked={item.rate_includes_gst}
+                            onCheckedChange={(checked) => updateLineItem(index, 'rate_includes_gst', !!checked)}
+                          />
+                          <Label htmlFor={`gst-inclusive-${index}`} className="text-sm text-muted-foreground cursor-pointer">
+                            Rate includes GST
+                          </Label>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Checkbox
+                            id={`deduction-${index}`}
+                            checked={item.is_deduction}
+                            onCheckedChange={(checked) => updateLineItem(index, 'is_deduction', !!checked)}
+                          />
+                          <Label htmlFor={`deduction-${index}`} className="text-sm text-muted-foreground cursor-pointer">
+                            This is a deduction
+                          </Label>
+                        </div>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <Checkbox
-                        id={`deduction-${index}`}
-                        checked={item.is_deduction}
-                        onCheckedChange={(checked) => updateLineItem(index, 'is_deduction', !!checked)}
-                      />
-                      <Label htmlFor={`deduction-${index}`} className="text-sm text-muted-foreground cursor-pointer">
-                        This is a deduction (e.g., advertisement fees, platform commission)
-                      </Label>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
 
-          {/* GST and Totals */}
+          {/* Totals */}
           <div className="space-y-4">
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="gst_percentage">GST %</Label>
-                <Input
-                  id="gst_percentage"
-                  type="number"
-                  min="0"
-                  max="100"
-                  step="0.01"
-                  value={formData.gst_percentage}
-                  onChange={(e) => setFormData({ ...formData, gst_percentage: parseFloat(e.target.value) || 0 })}
+                <Label htmlFor="terms">Terms & Conditions</Label>
+                <Textarea
+                  id="terms"
+                  value={formData.terms}
+                  onChange={(e) => setFormData({ ...formData, terms: e.target.value })}
+                  placeholder="Payment terms, conditions..."
+                  rows={3}
                 />
               </div>
               <div className="space-y-2 text-right">
                 <div className="text-sm text-muted-foreground">
-                  Deductions: <span className="text-destructive font-medium">-₹{deductionsTotal.toLocaleString('en-IN')}</span>
+                  Deductions: <span className="text-destructive font-medium">-₹{deductionsTotal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
                 </div>
                 <div className="text-sm text-muted-foreground">
-                  Subtotal: <span className="font-medium">₹{subtotal.toLocaleString('en-IN')}</span>
+                  Subtotal (Base): <span className="font-medium">₹{subtotal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
                 </div>
                 <div className="text-sm text-muted-foreground">
-                  GST ({formData.gst_percentage}%): <span className="font-medium">₹{gstAmount.toLocaleString('en-IN')}</span>
+                  Total GST: <span className="font-medium">₹{gstAmount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
                 </div>
                 <div className="text-lg font-bold">
-                  Total: ₹{totalAmount.toLocaleString('en-IN')}
+                  Grand Total: ₹{totalAmount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
                 </div>
               </div>
             </div>
           </div>
 
-          {/* Notes and Terms */}
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="notes">Internal Notes</Label>
-              <Textarea
-                id="notes"
-                value={formData.notes}
-                onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                placeholder="Notes for internal reference..."
-                rows={3}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="terms">Terms & Conditions</Label>
-              <Textarea
-                id="terms"
-                value={formData.terms}
-                onChange={(e) => setFormData({ ...formData, terms: e.target.value })}
-                placeholder="Payment terms, conditions..."
-                rows={3}
-              />
-            </div>
+          {/* Notes */}
+          <div className="space-y-2">
+            <Label htmlFor="notes">Internal Notes</Label>
+            <Textarea
+              id="notes"
+              value={formData.notes}
+              onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+              placeholder="Notes for internal reference..."
+              rows={2}
+            />
           </div>
 
           {/* Actions */}

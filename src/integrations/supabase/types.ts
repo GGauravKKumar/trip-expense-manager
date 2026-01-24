@@ -378,32 +378,44 @@ export type Database = {
       invoice_line_items: {
         Row: {
           amount: number
+          base_amount: number
           created_at: string
           description: string
+          gst_amount: number
+          gst_percentage: number
           id: string
           invoice_id: string
           is_deduction: boolean
           quantity: number
+          rate_includes_gst: boolean
           unit_price: number
         }
         Insert: {
           amount?: number
+          base_amount?: number
           created_at?: string
           description: string
+          gst_amount?: number
+          gst_percentage?: number
           id?: string
           invoice_id: string
           is_deduction?: boolean
           quantity?: number
+          rate_includes_gst?: boolean
           unit_price?: number
         }
         Update: {
           amount?: number
+          base_amount?: number
           created_at?: string
           description?: string
+          gst_amount?: number
+          gst_percentage?: number
           id?: string
           invoice_id?: string
           is_deduction?: boolean
           quantity?: number
+          rate_includes_gst?: boolean
           unit_price?: number
         }
         Relationships: [
