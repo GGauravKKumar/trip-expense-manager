@@ -1,4 +1,4 @@
-export type AppRole = 'admin' | 'driver';
+export type AppRole = 'admin' | 'driver' | 'repair_org';
 export type TripStatus = 'scheduled' | 'in_progress' | 'completed' | 'cancelled';
 export type ExpenseStatus = 'pending' | 'approved' | 'denied';
 export type BusStatus = 'active' | 'maintenance' | 'inactive';

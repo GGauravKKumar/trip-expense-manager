@@ -17,6 +17,8 @@ import {
   Settings,
   Calendar,
   Package,
+  Building2,
+  Wrench,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useState } from 'react';
@@ -30,6 +32,8 @@ const adminLinks = [
   { href: '/admin/trips', label: 'Trips', icon: MapPin },
   { href: '/admin/expenses', label: 'Approve Expenses', icon: FileCheck },
   { href: '/admin/stock', label: 'Stock', icon: Package },
+  { href: '/admin/repair-organizations', label: 'Repair Orgs', icon: Building2 },
+  { href: '/admin/repair-records', label: 'Repair Records', icon: Wrench },
   { href: '/admin/profitability', label: 'Profitability', icon: TrendingUp },
   { href: '/admin/settings', label: 'Settings', icon: Settings },
 ];
@@ -41,12 +45,16 @@ const driverLinks = [
   { href: '/driver/profile', label: 'Profile', icon: User },
 ];
 
+const repairOrgLinks = [
+  { href: '/repair', label: 'Dashboard', icon: Wrench },
+];
+
 export default function Sidebar() {
   const { userRole, signOut, user } = useAuth();
   const location = useLocation();
   const [isMobileOpen, setIsMobileOpen] = useState(false);
 
-  const links = userRole === 'admin' ? adminLinks : driverLinks;
+  const links = userRole === 'admin' ? adminLinks : userRole === 'repair_org' ? repairOrgLinks : driverLinks;
 
   const handleSignOut = async () => {
     await signOut();

@@ -18,10 +18,13 @@ import ExpenseApproval from "@/pages/admin/ExpenseApproval";
 import StockManagement from "@/pages/admin/StockManagement";
 import ProfitabilityReport from "@/pages/admin/ProfitabilityReport";
 import AdminSettings from "@/pages/admin/Settings";
+import RepairOrganizations from "@/pages/admin/RepairOrganizations";
+import RepairRecords from "@/pages/admin/RepairRecords";
 import DriverDashboard from "@/pages/driver/DriverDashboard";
 import DriverTrips from "@/pages/driver/DriverTrips";
 import DriverExpenses from "@/pages/driver/DriverExpenses";
 import DriverProfile from "@/pages/driver/DriverProfile";
+import RepairDashboard from "@/pages/repair/RepairDashboard";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -49,11 +52,15 @@ const App = () => (
             <Route path="/admin/stock" element={<ProtectedRoute requiredRole="admin"><StockManagement /></ProtectedRoute>} />
             <Route path="/admin/profitability" element={<ProtectedRoute requiredRole="admin"><ProfitabilityReport /></ProtectedRoute>} />
             <Route path="/admin/settings" element={<ProtectedRoute requiredRole="admin"><AdminSettings /></ProtectedRoute>} />
+            <Route path="/admin/repair-organizations" element={<ProtectedRoute requiredRole="admin"><RepairOrganizations /></ProtectedRoute>} />
+            <Route path="/admin/repair-records" element={<ProtectedRoute requiredRole="admin"><RepairRecords /></ProtectedRoute>} />
             {/* Driver Routes */}
             <Route path="/driver" element={<ProtectedRoute requiredRole="driver"><DriverDashboard /></ProtectedRoute>} />
             <Route path="/driver/trips" element={<ProtectedRoute requiredRole="driver"><DriverTrips /></ProtectedRoute>} />
             <Route path="/driver/expenses" element={<ProtectedRoute requiredRole="driver"><DriverExpenses /></ProtectedRoute>} />
             <Route path="/driver/profile" element={<ProtectedRoute requiredRole="driver"><DriverProfile /></ProtectedRoute>} />
+            {/* Repair Org Routes */}
+            <Route path="/repair" element={<ProtectedRoute requiredRole="repair_org"><RepairDashboard /></ProtectedRoute>} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>
