@@ -41,47 +41,208 @@ export type Database = {
         }
         Relationships: []
       }
+      bus_schedules: {
+        Row: {
+          arrival_time: string
+          bus_id: string
+          created_at: string
+          days_of_week: string[]
+          departure_time: string
+          driver_id: string | null
+          id: string
+          is_active: boolean
+          is_two_way: boolean
+          notes: string | null
+          return_arrival_time: string | null
+          return_departure_time: string | null
+          route_id: string
+          updated_at: string
+        }
+        Insert: {
+          arrival_time: string
+          bus_id: string
+          created_at?: string
+          days_of_week?: string[]
+          departure_time: string
+          driver_id?: string | null
+          id?: string
+          is_active?: boolean
+          is_two_way?: boolean
+          notes?: string | null
+          return_arrival_time?: string | null
+          return_departure_time?: string | null
+          route_id: string
+          updated_at?: string
+        }
+        Update: {
+          arrival_time?: string
+          bus_id?: string
+          created_at?: string
+          days_of_week?: string[]
+          departure_time?: string
+          driver_id?: string | null
+          id?: string
+          is_active?: boolean
+          is_two_way?: boolean
+          notes?: string | null
+          return_arrival_time?: string | null
+          return_departure_time?: string | null
+          route_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bus_schedules_bus_id_fkey"
+            columns: ["bus_id"]
+            isOneToOne: false
+            referencedRelation: "buses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bus_schedules_driver_id_fkey"
+            columns: ["driver_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bus_schedules_route_id_fkey"
+            columns: ["route_id"]
+            isOneToOne: false
+            referencedRelation: "routes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      bus_tax_records: {
+        Row: {
+          amount: number
+          bus_id: string
+          created_at: string
+          due_date: string
+          id: string
+          notes: string | null
+          paid_date: string | null
+          payment_reference: string | null
+          status: Database["public"]["Enums"]["tax_status"]
+          tax_period_end: string
+          tax_period_start: string
+          updated_at: string
+        }
+        Insert: {
+          amount: number
+          bus_id: string
+          created_at?: string
+          due_date: string
+          id?: string
+          notes?: string | null
+          paid_date?: string | null
+          payment_reference?: string | null
+          status?: Database["public"]["Enums"]["tax_status"]
+          tax_period_end: string
+          tax_period_start: string
+          updated_at?: string
+        }
+        Update: {
+          amount?: number
+          bus_id?: string
+          created_at?: string
+          due_date?: string
+          id?: string
+          notes?: string | null
+          paid_date?: string | null
+          payment_reference?: string | null
+          status?: Database["public"]["Enums"]["tax_status"]
+          tax_period_end?: string
+          tax_period_start?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bus_tax_records_bus_id_fkey"
+            columns: ["bus_id"]
+            isOneToOne: false
+            referencedRelation: "buses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       buses: {
         Row: {
           bus_name: string | null
           bus_type: string | null
           capacity: number
+          company_profit_share: number
           created_at: string
           fitness_expiry: string | null
+          home_state_id: string | null
           id: string
           insurance_expiry: string | null
+          last_tax_paid_date: string | null
+          monthly_tax_amount: number | null
+          next_tax_due_date: string | null
+          ownership_type: Database["public"]["Enums"]["ownership_type"]
+          partner_name: string | null
+          partner_profit_share: number
           puc_expiry: string | null
           registration_number: string
           status: Database["public"]["Enums"]["bus_status"]
+          tax_due_day: number | null
           updated_at: string
         }
         Insert: {
           bus_name?: string | null
           bus_type?: string | null
           capacity?: number
+          company_profit_share?: number
           created_at?: string
           fitness_expiry?: string | null
+          home_state_id?: string | null
           id?: string
           insurance_expiry?: string | null
+          last_tax_paid_date?: string | null
+          monthly_tax_amount?: number | null
+          next_tax_due_date?: string | null
+          ownership_type?: Database["public"]["Enums"]["ownership_type"]
+          partner_name?: string | null
+          partner_profit_share?: number
           puc_expiry?: string | null
           registration_number: string
           status?: Database["public"]["Enums"]["bus_status"]
+          tax_due_day?: number | null
           updated_at?: string
         }
         Update: {
           bus_name?: string | null
           bus_type?: string | null
           capacity?: number
+          company_profit_share?: number
           created_at?: string
           fitness_expiry?: string | null
+          home_state_id?: string | null
           id?: string
           insurance_expiry?: string | null
+          last_tax_paid_date?: string | null
+          monthly_tax_amount?: number | null
+          next_tax_due_date?: string | null
+          ownership_type?: Database["public"]["Enums"]["ownership_type"]
+          partner_name?: string | null
+          partner_profit_share?: number
           puc_expiry?: string | null
           registration_number?: string
           status?: Database["public"]["Enums"]["bus_status"]
+          tax_due_day?: number | null
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "buses_home_state_id_fkey"
+            columns: ["home_state_id"]
+            isOneToOne: false
+            referencedRelation: "indian_states"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       expense_categories: {
         Row: {
@@ -337,6 +498,101 @@ export type Database = {
           },
         ]
       }
+      stock_items: {
+        Row: {
+          created_at: string
+          id: string
+          item_name: string
+          last_updated_by: string | null
+          low_stock_threshold: number
+          notes: string | null
+          quantity: number
+          unit: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          item_name: string
+          last_updated_by?: string | null
+          low_stock_threshold?: number
+          notes?: string | null
+          quantity?: number
+          unit?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          item_name?: string
+          last_updated_by?: string | null
+          low_stock_threshold?: number
+          notes?: string | null
+          quantity?: number
+          unit?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "stock_items_last_updated_by_fkey"
+            columns: ["last_updated_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      stock_transactions: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          new_quantity: number
+          notes: string | null
+          previous_quantity: number
+          quantity_change: number
+          stock_item_id: string
+          transaction_type: Database["public"]["Enums"]["stock_transaction_type"]
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          new_quantity: number
+          notes?: string | null
+          previous_quantity: number
+          quantity_change: number
+          stock_item_id: string
+          transaction_type: Database["public"]["Enums"]["stock_transaction_type"]
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          new_quantity?: number
+          notes?: string | null
+          previous_quantity?: number
+          quantity_change?: number
+          stock_item_id?: string
+          transaction_type?: Database["public"]["Enums"]["stock_transaction_type"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "stock_transactions_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_transactions_stock_item_id_fkey"
+            columns: ["stock_item_id"]
+            isOneToOne: false
+            referencedRelation: "stock_items"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       trips: {
         Row: {
           bus_id: string | null
@@ -347,18 +603,21 @@ export type Database = {
           driver_id: string | null
           driver_name_snapshot: string | null
           end_date: string | null
+          gst_percentage: number | null
           id: string
           notes: string | null
           odometer_end: number | null
           odometer_return_end: number | null
           odometer_return_start: number | null
           odometer_start: number | null
+          return_revenue_agent: number | null
           return_revenue_cash: number | null
           return_revenue_online: number | null
           return_revenue_others: number | null
           return_revenue_paytm: number | null
           return_total_expense: number | null
           return_total_revenue: number | null
+          revenue_agent: number | null
           revenue_cash: number | null
           revenue_online: number | null
           revenue_others: number | null
@@ -381,18 +640,21 @@ export type Database = {
           driver_id?: string | null
           driver_name_snapshot?: string | null
           end_date?: string | null
+          gst_percentage?: number | null
           id?: string
           notes?: string | null
           odometer_end?: number | null
           odometer_return_end?: number | null
           odometer_return_start?: number | null
           odometer_start?: number | null
+          return_revenue_agent?: number | null
           return_revenue_cash?: number | null
           return_revenue_online?: number | null
           return_revenue_others?: number | null
           return_revenue_paytm?: number | null
           return_total_expense?: number | null
           return_total_revenue?: number | null
+          revenue_agent?: number | null
           revenue_cash?: number | null
           revenue_online?: number | null
           revenue_others?: number | null
@@ -415,18 +677,21 @@ export type Database = {
           driver_id?: string | null
           driver_name_snapshot?: string | null
           end_date?: string | null
+          gst_percentage?: number | null
           id?: string
           notes?: string | null
           odometer_end?: number | null
           odometer_return_end?: number | null
           odometer_return_start?: number | null
           odometer_start?: number | null
+          return_revenue_agent?: number | null
           return_revenue_cash?: number | null
           return_revenue_online?: number | null
           return_revenue_others?: number | null
           return_revenue_paytm?: number | null
           return_total_expense?: number | null
           return_total_revenue?: number | null
+          revenue_agent?: number | null
           revenue_cash?: number | null
           revenue_online?: number | null
           revenue_others?: number | null
@@ -503,6 +768,9 @@ export type Database = {
       app_role: "admin" | "driver"
       bus_status: "active" | "maintenance" | "inactive"
       expense_status: "pending" | "approved" | "denied"
+      ownership_type: "owned" | "partnership"
+      stock_transaction_type: "add" | "remove" | "adjustment"
+      tax_status: "pending" | "paid" | "overdue"
       trip_status: "scheduled" | "in_progress" | "completed" | "cancelled"
     }
     CompositeTypes: {
@@ -634,6 +902,9 @@ export const Constants = {
       app_role: ["admin", "driver"],
       bus_status: ["active", "maintenance", "inactive"],
       expense_status: ["pending", "approved", "denied"],
+      ownership_type: ["owned", "partnership"],
+      stock_transaction_type: ["add", "remove", "adjustment"],
+      tax_status: ["pending", "paid", "overdue"],
       trip_status: ["scheduled", "in_progress", "completed", "cancelled"],
     },
   },

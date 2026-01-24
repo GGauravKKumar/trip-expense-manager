@@ -2,6 +2,9 @@ export type AppRole = 'admin' | 'driver';
 export type TripStatus = 'scheduled' | 'in_progress' | 'completed' | 'cancelled';
 export type ExpenseStatus = 'pending' | 'approved' | 'denied';
 export type BusStatus = 'active' | 'maintenance' | 'inactive';
+export type OwnershipType = 'owned' | 'partnership';
+export type StockTransactionType = 'add' | 'remove' | 'adjustment';
+export type TaxStatus = 'pending' | 'paid' | 'overdue';
 
 export interface Profile {
   id: string;
@@ -26,6 +29,18 @@ export interface Bus {
   insurance_expiry: string | null;
   puc_expiry: string | null;
   fitness_expiry: string | null;
+  // Ownership fields
+  ownership_type: OwnershipType;
+  partner_name: string | null;
+  company_profit_share: number;
+  partner_profit_share: number;
+  // Tax fields
+  home_state_id: string | null;
+  monthly_tax_amount: number | null;
+  tax_due_day: number | null;
+  last_tax_paid_date: string | null;
+  next_tax_due_date: string | null;
+  home_state?: IndianState;
   created_at: string;
   updated_at: string;
 }
@@ -78,7 +93,9 @@ export interface Trip {
   revenue_online: number | null;
   revenue_paytm: number | null;
   revenue_others: number | null;
+  revenue_agent: number | null;
   total_revenue: number | null;
+  gst_percentage: number | null;
   // Return journey
   odometer_return_start: number | null;
   odometer_return_end: number | null;
@@ -87,6 +104,7 @@ export interface Trip {
   return_revenue_online: number | null;
   return_revenue_paytm: number | null;
   return_revenue_others: number | null;
+  return_revenue_agent: number | null;
   return_total_revenue: number | null;
   return_total_expense: number | null;
   created_at: string;
@@ -129,4 +147,65 @@ export interface UserRole {
   user_id: string;
   role: AppRole;
   created_at: string;
+}
+
+export interface BusSchedule {
+  id: string;
+  bus_id: string;
+  route_id: string;
+  driver_id: string | null;
+  departure_time: string;
+  arrival_time: string;
+  days_of_week: string[];
+  is_two_way: boolean;
+  return_departure_time: string | null;
+  return_arrival_time: string | null;
+  is_active: boolean;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+  bus?: Bus;
+  route?: Route;
+  driver?: Profile;
+}
+
+export interface StockItem {
+  id: string;
+  item_name: string;
+  quantity: number;
+  low_stock_threshold: number;
+  unit: string;
+  notes: string | null;
+  last_updated_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface StockTransaction {
+  id: string;
+  stock_item_id: string;
+  transaction_type: StockTransactionType;
+  quantity_change: number;
+  previous_quantity: number;
+  new_quantity: number;
+  notes: string | null;
+  created_by: string | null;
+  created_at: string;
+  stock_item?: StockItem;
+}
+
+export interface BusTaxRecord {
+  id: string;
+  bus_id: string;
+  tax_period_start: string;
+  tax_period_end: string;
+  amount: number;
+  due_date: string;
+  paid_date: string | null;
+  payment_reference: string | null;
+  status: TaxStatus;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+  bus?: Bus;
 }

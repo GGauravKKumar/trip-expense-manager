@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { supabase } from '@/integrations/supabase/client';
 import { Trip } from '@/types/database';
-import { Loader2, ArrowRight, ArrowLeft } from 'lucide-react';
+import { Loader2, ArrowRight, ArrowLeft, Receipt } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface TripRevenueDialogProps {
@@ -18,17 +18,20 @@ interface TripRevenueDialogProps {
 
 export default function TripRevenueDialog({ open, onOpenChange, trip, onSuccess }: TripRevenueDialogProps) {
   const [submitting, setSubmitting] = useState(false);
+  const [gstPercentage, setGstPercentage] = useState(18);
   const [formData, setFormData] = useState({
     // Outward journey
     revenue_cash: '0',
     revenue_online: '0',
     revenue_paytm: '0',
     revenue_others: '0',
+    revenue_agent: '0',
     // Return journey
     return_revenue_cash: '0',
     return_revenue_online: '0',
     return_revenue_paytm: '0',
     return_revenue_others: '0',
+    return_revenue_agent: '0',
   });
 
   useEffect(() => {
@@ -38,13 +41,32 @@ export default function TripRevenueDialog({ open, onOpenChange, trip, onSuccess 
         revenue_online: trip.revenue_online?.toString() || '0',
         revenue_paytm: trip.revenue_paytm?.toString() || '0',
         revenue_others: trip.revenue_others?.toString() || '0',
+        revenue_agent: trip.revenue_agent?.toString() || '0',
         return_revenue_cash: trip.return_revenue_cash?.toString() || '0',
         return_revenue_online: trip.return_revenue_online?.toString() || '0',
         return_revenue_paytm: trip.return_revenue_paytm?.toString() || '0',
         return_revenue_others: trip.return_revenue_others?.toString() || '0',
+        return_revenue_agent: trip.return_revenue_agent?.toString() || '0',
       });
+      setGstPercentage(trip.gst_percentage || 18);
     }
   }, [trip]);
+
+  // Fetch GST percentage from settings
+  useEffect(() => {
+    async function fetchGstSetting() {
+      const { data } = await supabase
+        .from('admin_settings')
+        .select('value')
+        .eq('key', 'gst_percentage')
+        .single();
+      
+      if (data?.value) {
+        setGstPercentage(parseFloat(data.value) || 18);
+      }
+    }
+    fetchGstSetting();
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -57,15 +79,16 @@ export default function TripRevenueDialog({ open, onOpenChange, trip, onSuccess 
       revenue_online: parseFloat(formData.revenue_online) || 0,
       revenue_paytm: parseFloat(formData.revenue_paytm) || 0,
       revenue_others: parseFloat(formData.revenue_others) || 0,
+      revenue_agent: parseFloat(formData.revenue_agent) || 0,
+      gst_percentage: gstPercentage,
     };
 
-    // NOTE: total_revenue / return_total_revenue are generated columns in the database,
-    // so we should not try to update them directly.
     if (trip.trip_type === 'two_way') {
       updateData.return_revenue_cash = parseFloat(formData.return_revenue_cash) || 0;
       updateData.return_revenue_online = parseFloat(formData.return_revenue_online) || 0;
       updateData.return_revenue_paytm = parseFloat(formData.return_revenue_paytm) || 0;
       updateData.return_revenue_others = parseFloat(formData.return_revenue_others) || 0;
+      updateData.return_revenue_agent = parseFloat(formData.return_revenue_agent) || 0;
     }
 
     const { error } = await supabase
@@ -84,19 +107,92 @@ export default function TripRevenueDialog({ open, onOpenChange, trip, onSuccess 
     setSubmitting(false);
   }
 
+  // Calculate totals
   const outwardTotal =
     (parseFloat(formData.revenue_cash) || 0) +
     (parseFloat(formData.revenue_online) || 0) +
     (parseFloat(formData.revenue_paytm) || 0) +
-    (parseFloat(formData.revenue_others) || 0);
+    (parseFloat(formData.revenue_others) || 0) +
+    (parseFloat(formData.revenue_agent) || 0);
 
   const returnTotal =
     (parseFloat(formData.return_revenue_cash) || 0) +
     (parseFloat(formData.return_revenue_online) || 0) +
     (parseFloat(formData.return_revenue_paytm) || 0) +
-    (parseFloat(formData.return_revenue_others) || 0);
+    (parseFloat(formData.return_revenue_others) || 0) +
+    (parseFloat(formData.return_revenue_agent) || 0);
 
   const isTwoWay = trip?.trip_type === 'two_way';
+  const grandTotal = outwardTotal + (isTwoWay ? returnTotal : 0);
+  
+  // GST Calculation (GST is inclusive in the total, so we extract it)
+  const gstAmount = grandTotal * (gstPercentage / (100 + gstPercentage));
+  const netRevenue = grandTotal - gstAmount;
+
+  const RevenueFields = ({ prefix = '', values, onChange }: { 
+    prefix?: string; 
+    values: { cash: string; online: string; paytm: string; others: string; agent: string };
+    onChange: (field: string, value: string) => void;
+  }) => (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label htmlFor={`${prefix}revenue_cash`}>Cash (₹)</Label>
+          <Input
+            id={`${prefix}revenue_cash`}
+            type="number"
+            value={values.cash}
+            onChange={(e) => onChange(`${prefix}revenue_cash`, e.target.value)}
+            placeholder="0"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor={`${prefix}revenue_online`}>Online/App (₹)</Label>
+          <Input
+            id={`${prefix}revenue_online`}
+            type="number"
+            value={values.online}
+            onChange={(e) => onChange(`${prefix}revenue_online`, e.target.value)}
+            placeholder="0"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor={`${prefix}revenue_paytm`}>Paytm (₹)</Label>
+          <Input
+            id={`${prefix}revenue_paytm`}
+            type="number"
+            value={values.paytm}
+            onChange={(e) => onChange(`${prefix}revenue_paytm`, e.target.value)}
+            placeholder="0"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor={`${prefix}revenue_others`}>Others (₹)</Label>
+          <Input
+            id={`${prefix}revenue_others`}
+            type="number"
+            value={values.others}
+            onChange={(e) => onChange(`${prefix}revenue_others`, e.target.value)}
+            placeholder="0"
+          />
+        </div>
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor={`${prefix}revenue_agent`}>Agent Booking (₹)</Label>
+        <Input
+          id={`${prefix}revenue_agent`}
+          type="number"
+          value={values.agent}
+          onChange={(e) => onChange(`${prefix}revenue_agent`, e.target.value)}
+          placeholder="0"
+        />
+      </div>
+    </div>
+  );
+
+  const handleFieldChange = (field: string, value: string) => {
+    setFormData({ ...formData, [field]: value });
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -126,48 +222,16 @@ export default function TripRevenueDialog({ open, onOpenChange, trip, onSuccess 
                 </TabsTrigger>
               </TabsList>
               <TabsContent value="outward" className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="revenue_cash">Cash (₹)</Label>
-                    <Input
-                      id="revenue_cash"
-                      type="number"
-                      value={formData.revenue_cash}
-                      onChange={(e) => setFormData({ ...formData, revenue_cash: e.target.value })}
-                      placeholder="0"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="revenue_online">Online (₹)</Label>
-                    <Input
-                      id="revenue_online"
-                      type="number"
-                      value={formData.revenue_online}
-                      onChange={(e) => setFormData({ ...formData, revenue_online: e.target.value })}
-                      placeholder="0"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="revenue_paytm">Paytm (₹)</Label>
-                    <Input
-                      id="revenue_paytm"
-                      type="number"
-                      value={formData.revenue_paytm}
-                      onChange={(e) => setFormData({ ...formData, revenue_paytm: e.target.value })}
-                      placeholder="0"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="revenue_others">Others (₹)</Label>
-                    <Input
-                      id="revenue_others"
-                      type="number"
-                      value={formData.revenue_others}
-                      onChange={(e) => setFormData({ ...formData, revenue_others: e.target.value })}
-                      placeholder="0"
-                    />
-                  </div>
-                </div>
+                <RevenueFields
+                  values={{
+                    cash: formData.revenue_cash,
+                    online: formData.revenue_online,
+                    paytm: formData.revenue_paytm,
+                    others: formData.revenue_others,
+                    agent: formData.revenue_agent,
+                  }}
+                  onChange={handleFieldChange}
+                />
                 <div className="p-3 bg-green-500/10 rounded-lg">
                   <p className="text-sm font-medium text-green-700">
                     Outward Total: ₹{outwardTotal.toLocaleString('en-IN')}
@@ -175,48 +239,17 @@ export default function TripRevenueDialog({ open, onOpenChange, trip, onSuccess 
                 </div>
               </TabsContent>
               <TabsContent value="return" className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="return_revenue_cash">Cash (₹)</Label>
-                    <Input
-                      id="return_revenue_cash"
-                      type="number"
-                      value={formData.return_revenue_cash}
-                      onChange={(e) => setFormData({ ...formData, return_revenue_cash: e.target.value })}
-                      placeholder="0"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="return_revenue_online">Online (₹)</Label>
-                    <Input
-                      id="return_revenue_online"
-                      type="number"
-                      value={formData.return_revenue_online}
-                      onChange={(e) => setFormData({ ...formData, return_revenue_online: e.target.value })}
-                      placeholder="0"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="return_revenue_paytm">Paytm (₹)</Label>
-                    <Input
-                      id="return_revenue_paytm"
-                      type="number"
-                      value={formData.return_revenue_paytm}
-                      onChange={(e) => setFormData({ ...formData, return_revenue_paytm: e.target.value })}
-                      placeholder="0"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="return_revenue_others">Others (₹)</Label>
-                    <Input
-                      id="return_revenue_others"
-                      type="number"
-                      value={formData.return_revenue_others}
-                      onChange={(e) => setFormData({ ...formData, return_revenue_others: e.target.value })}
-                      placeholder="0"
-                    />
-                  </div>
-                </div>
+                <RevenueFields
+                  prefix="return_"
+                  values={{
+                    cash: formData.return_revenue_cash,
+                    online: formData.return_revenue_online,
+                    paytm: formData.return_revenue_paytm,
+                    others: formData.return_revenue_others,
+                    agent: formData.return_revenue_agent,
+                  }}
+                  onChange={handleFieldChange}
+                />
                 <div className="p-3 bg-blue-500/10 rounded-lg">
                   <p className="text-sm font-medium text-blue-700">
                     Return Total: ₹{returnTotal.toLocaleString('en-IN')}
@@ -225,54 +258,34 @@ export default function TripRevenueDialog({ open, onOpenChange, trip, onSuccess 
               </TabsContent>
             </Tabs>
           ) : (
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="revenue_cash">Cash (₹)</Label>
-                <Input
-                  id="revenue_cash"
-                  type="number"
-                  value={formData.revenue_cash}
-                  onChange={(e) => setFormData({ ...formData, revenue_cash: e.target.value })}
-                  placeholder="0"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="revenue_online">Online (₹)</Label>
-                <Input
-                  id="revenue_online"
-                  type="number"
-                  value={formData.revenue_online}
-                  onChange={(e) => setFormData({ ...formData, revenue_online: e.target.value })}
-                  placeholder="0"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="revenue_paytm">Paytm (₹)</Label>
-                <Input
-                  id="revenue_paytm"
-                  type="number"
-                  value={formData.revenue_paytm}
-                  onChange={(e) => setFormData({ ...formData, revenue_paytm: e.target.value })}
-                  placeholder="0"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="revenue_others">Others (₹)</Label>
-                <Input
-                  id="revenue_others"
-                  type="number"
-                  value={formData.revenue_others}
-                  onChange={(e) => setFormData({ ...formData, revenue_others: e.target.value })}
-                  placeholder="0"
-                />
-              </div>
-            </div>
+            <RevenueFields
+              values={{
+                cash: formData.revenue_cash,
+                online: formData.revenue_online,
+                paytm: formData.revenue_paytm,
+                others: formData.revenue_others,
+                agent: formData.revenue_agent,
+              }}
+              onChange={handleFieldChange}
+            />
           )}
 
-          <div className="p-3 bg-primary/10 rounded-lg">
-            <p className="text-lg font-bold">
-              Grand Total: ₹{(outwardTotal + (isTwoWay ? returnTotal : 0)).toLocaleString('en-IN')}
-            </p>
+          {/* GST Breakdown */}
+          <div className="p-4 bg-primary/10 rounded-lg space-y-2">
+            <div className="flex items-center gap-2 mb-2">
+              <Receipt className="h-4 w-4" />
+              <span className="font-medium">GST Breakdown</span>
+            </div>
+            <div className="grid grid-cols-2 gap-2 text-sm">
+              <span className="text-muted-foreground">Gross Revenue:</span>
+              <span className="text-right font-medium">₹{grandTotal.toLocaleString('en-IN')}</span>
+              
+              <span className="text-muted-foreground">GST @ {gstPercentage}% (inclusive):</span>
+              <span className="text-right text-destructive">- ₹{gstAmount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+              
+              <span className="font-medium">Net Revenue:</span>
+              <span className="text-right font-bold text-green-600">₹{netRevenue.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+            </div>
           </div>
 
           <div className="flex justify-end gap-2">
