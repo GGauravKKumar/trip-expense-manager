@@ -38,7 +38,7 @@ serve(async (req) => {
       .select(`
         *,
         buses (id, registration_number, bus_name),
-        routes (id, origin, destination, distance_km),
+        routes (id, route_name, from_address, to_address, distance_km),
         profiles:driver_id (id, full_name)
       `)
       .eq("is_active", true)
@@ -140,8 +140,7 @@ serve(async (req) => {
             user_id: schedule.driver_id,
             type: "trip_reminder",
             title: "Scheduled Trip Today",
-            message: `You have a scheduled trip from ${schedule.routes?.origin || "Origin"} to ${schedule.routes?.destination || "Destination"} departing at ${departureTime}`,
-            data: { trip_number: tripNumber, schedule_id: schedule.id },
+            message: `You have a scheduled trip: ${schedule.routes?.route_name || "Route"} departing at ${departureTime}`,
           });
         }
       } catch (err: unknown) {
