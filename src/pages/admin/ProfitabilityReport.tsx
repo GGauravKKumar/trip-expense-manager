@@ -54,6 +54,15 @@ export default function ProfitabilityReport() {
   async function fetchProfitabilityData() {
     setLoading(true);
 
+    // Fetch fuel price from settings
+    const { data: fuelSetting } = await supabase
+      .from('admin_settings')
+      .select('value')
+      .eq('key', 'fuel_price_per_liter')
+      .single();
+    
+    const fuelPricePerLiter = fuelSetting?.value ? parseFloat(fuelSetting.value) : 90;
+
     // Fetch trips with related data
     const { data: trips } = await supabase
       .from('trips')
@@ -143,9 +152,9 @@ export default function ProfitabilityReport() {
       busData.profit = busData.totalRevenue - busData.totalExpense;
       busData.tripCount += 1;
       busData.totalDistance += distance;
-      // Calculate fuel efficiency (assuming ₹90/liter diesel average)
+      // Calculate fuel efficiency using dynamic fuel price
       if (tripDiesel > 0 && distance > 0) {
-        const liters = tripDiesel / 90;
+        const liters = tripDiesel / fuelPricePerLiter;
         const currentFuelEfficiency = distance / liters;
         busData.fuelEfficiency = busData.fuelEfficiency 
           ? (busData.fuelEfficiency + currentFuelEfficiency) / 2 

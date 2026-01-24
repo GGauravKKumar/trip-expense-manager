@@ -93,16 +93,27 @@ export default function AdminDashboard() {
   const [recentActivity, setRecentActivity] = useState<RecentActivity[]>([]);
   const [fuelEfficiency, setFuelEfficiency] = useState<FuelEfficiency[]>([]);
   const [loading, setLoading] = useState(true);
+  const [expiryAlertDays, setExpiryAlertDays] = useState(30);
 
   useEffect(() => {
     fetchAllData();
   }, []);
 
   async function fetchAllData() {
+    // Fetch expiry alert threshold from settings first
+    const { data: expirySetting } = await supabase
+      .from('admin_settings')
+      .select('value')
+      .eq('key', 'expiry_alert_days')
+      .single();
+    
+    const alertDays = expirySetting?.value ? parseInt(expirySetting.value) : 30;
+    setExpiryAlertDays(alertDays);
+
     await Promise.all([
       fetchStats(),
-      fetchExpiringBuses(),
-      fetchExpiringLicenses(),
+      fetchExpiringBuses(alertDays),
+      fetchExpiringLicenses(alertDays),
       fetchProfitData(),
       fetchRecentActivity(),
     ]);
@@ -143,7 +154,7 @@ export default function AdminDashboard() {
     });
   }
 
-  async function fetchExpiringBuses() {
+  async function fetchExpiringBuses(alertDays: number = 30) {
     const { data: buses } = await supabase
       .from('buses')
       .select('id, registration_number, bus_name, insurance_expiry, puc_expiry, fitness_expiry')
@@ -152,14 +163,14 @@ export default function AdminDashboard() {
     if (!buses) return;
 
     const today = new Date();
-    const thirtyDaysFromNow = addDays(today, 30);
+    const thresholdDate = addDays(today, alertDays);
     const expiries: BusExpiry[] = [];
 
     buses.forEach((bus) => {
       const checkExpiry = (date: string | null, type: 'insurance' | 'puc' | 'fitness') => {
         if (!date) return;
         const expiryDate = parseISO(date);
-        if (isWithinInterval(expiryDate, { start: today, end: thirtyDaysFromNow }) || expiryDate < today) {
+        if (isWithinInterval(expiryDate, { start: today, end: thresholdDate }) || expiryDate < today) {
           const daysRemaining = Math.ceil((expiryDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
           expiries.push({
             id: bus.id,
@@ -180,7 +191,7 @@ export default function AdminDashboard() {
     setExpiringBuses(expiries.sort((a, b) => a.days_remaining - b.days_remaining));
   }
 
-  async function fetchExpiringLicenses() {
+  async function fetchExpiringLicenses(alertDays: number = 30) {
     const { data: drivers } = await supabase
       .from('profiles')
       .select('id, full_name, license_number, license_expiry')
@@ -197,8 +208,8 @@ export default function AdminDashboard() {
       const expiryDate = parseISO(driver.license_expiry);
       const daysRemaining = differenceInDays(expiryDate, today);
       
-      // Show licenses expiring within 30 days or already expired
-      if (daysRemaining <= 30) {
+      // Show licenses expiring within configured alert days or already expired
+      if (daysRemaining <= alertDays) {
         expiring.push({
           id: driver.id,
           full_name: driver.full_name,

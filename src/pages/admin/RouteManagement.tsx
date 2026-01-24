@@ -5,11 +5,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { supabase } from '@/integrations/supabase/client';
 import { Route, IndianState } from '@/types/database';
-import { Plus, Pencil, Loader2, Receipt, Download } from 'lucide-react';
+import { Plus, Pencil, Loader2, Receipt, Download, Trash2, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import RouteExpensesDialog from '@/components/RouteExpensesDialog';
 import { exportToExcel } from '@/lib/exportUtils';
@@ -24,6 +25,10 @@ export default function RouteManagement() {
   const [editingRoute, setEditingRoute] = useState<Route | null>(null);
   const [expenseDialogOpen, setExpenseDialogOpen] = useState(false);
   const [selectedRoute, setSelectedRoute] = useState<Route | null>(null);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [routeToDelete, setRouteToDelete] = useState<Route | null>(null);
+  const [tripCount, setTripCount] = useState(0);
+  const [deleting, setDeleting] = useState(false);
   const [formData, setFormData] = useState({
     route_name: '',
     from_state_id: '',
@@ -187,6 +192,37 @@ export default function RouteManagement() {
       }
     }
     setSubmitting(false);
+  }
+
+  async function handleDeleteClick(route: Route) {
+    setRouteToDelete(route);
+    // Check for associated trips
+    const { count } = await supabase
+      .from('trips')
+      .select('*', { count: 'exact', head: true })
+      .eq('route_id', route.id);
+    setTripCount(count || 0);
+    setDeleteDialogOpen(true);
+  }
+
+  async function handleConfirmDelete() {
+    if (!routeToDelete) return;
+    setDeleting(true);
+
+    const { error } = await supabase
+      .from('routes')
+      .delete()
+      .eq('id', routeToDelete.id);
+
+    if (error) {
+      toast.error('Failed to delete route: ' + error.message);
+    } else {
+      toast.success('Route deleted successfully');
+      fetchRoutes();
+    }
+    setDeleting(false);
+    setDeleteDialogOpen(false);
+    setRouteToDelete(null);
   }
 
   return (
@@ -390,6 +426,9 @@ export default function RouteManagement() {
                           <Button variant="ghost" size="icon" onClick={() => handleEdit(route)} title="Edit">
                             <Pencil className="h-4 w-4" />
                           </Button>
+                          <Button variant="ghost" size="icon" onClick={() => handleDeleteClick(route)} title="Delete" className="text-destructive hover:text-destructive">
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -419,6 +458,48 @@ export default function RouteManagement() {
             routeName={selectedRoute.route_name}
           />
         )}
+
+        {/* Delete Confirmation Dialog */}
+        <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle className="flex items-center gap-2">
+                {tripCount > 0 && <AlertTriangle className="h-5 w-5 text-destructive" />}
+                Delete Route
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                {tripCount > 0 ? (
+                  <div className="space-y-2">
+                    <p>
+                      <strong className="text-destructive">Warning:</strong> This route has{' '}
+                      <strong>{tripCount}</strong> associated trip{tripCount !== 1 ? 's' : ''}.
+                    </p>
+                    <p>
+                      Deleting this route will remove the route reference from these trips. 
+                      Trip data will be preserved, but the route information will be lost.
+                    </p>
+                    <p className="font-medium">Are you sure you want to proceed?</p>
+                  </div>
+                ) : (
+                  <p>
+                    Are you sure you want to delete "{routeToDelete?.route_name}"? This action cannot be undone.
+                  </p>
+                )}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleConfirmDelete}
+                disabled={deleting}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                {deleting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                Delete
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </DashboardLayout>
   );

@@ -14,6 +14,7 @@ import {
   Menu,
   X,
   TrendingUp,
+  Settings,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useState } from 'react';
@@ -26,6 +27,7 @@ const adminLinks = [
   { href: '/admin/trips', label: 'Trips', icon: MapPin },
   { href: '/admin/expenses', label: 'Approve Expenses', icon: FileCheck },
   { href: '/admin/profitability', label: 'Profitability', icon: TrendingUp },
+  { href: '/admin/settings', label: 'Settings', icon: Settings },
 ];
 
 const driverLinks = [
