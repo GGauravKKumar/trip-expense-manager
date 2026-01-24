@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -8,9 +8,19 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { supabase } from '@/integrations/supabase/client';
 import { Bus, BusStatus } from '@/types/database';
-import { Plus, Pencil, Loader2 } from 'lucide-react';
+import { Plus, Pencil, Loader2, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function BusManagement() {
@@ -29,6 +39,12 @@ export default function BusManagement() {
     fitness_expiry: '',
   });
   const [submitting, setSubmitting] = useState(false);
+
+  // Delete state
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deletingBus, setDeletingBus] = useState<Bus | null>(null);
+  const [hasRelatedTrips, setHasRelatedTrips] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     fetchBuses();
@@ -118,6 +134,45 @@ export default function BusManagement() {
       }
     }
     setSubmitting(false);
+  }
+
+  async function handleDeleteBus(bus: Bus) {
+    setDeletingBus(bus);
+    
+    // Check if bus has related trips
+    const { count, error } = await supabase
+      .from('trips')
+      .select('*', { count: 'exact', head: true })
+      .eq('bus_id', bus.id);
+
+    if (error) {
+      toast.error('Failed to check bus dependencies');
+      return;
+    }
+
+    setHasRelatedTrips((count || 0) > 0);
+    setDeleteDialogOpen(true);
+  }
+
+  async function confirmDeleteBus() {
+    if (!deletingBus) return;
+
+    setDeleting(true);
+    const { error } = await supabase
+      .from('buses')
+      .delete()
+      .eq('id', deletingBus.id);
+
+    if (error) {
+      toast.error('Failed to delete bus');
+    } else {
+      toast.success('Bus deleted successfully');
+      fetchBuses();
+    }
+
+    setDeleting(false);
+    setDeleteDialogOpen(false);
+    setDeletingBus(null);
   }
 
   const getStatusBadge = (status: BusStatus) => {
@@ -270,7 +325,7 @@ export default function BusManagement() {
                   <TableHead>Status</TableHead>
                   <TableHead>Insurance</TableHead>
                   <TableHead>PUC</TableHead>
-                  <TableHead className="w-[50px]"></TableHead>
+                  <TableHead className="w-[100px]"></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -297,9 +352,14 @@ export default function BusManagement() {
                       <TableCell>{bus.insurance_expiry || '-'}</TableCell>
                       <TableCell>{bus.puc_expiry || '-'}</TableCell>
                       <TableCell>
-                        <Button variant="ghost" size="icon" onClick={() => handleEdit(bus)}>
-                          <Pencil className="h-4 w-4" />
-                        </Button>
+                        <div className="flex gap-1">
+                          <Button variant="ghost" size="icon" onClick={() => handleEdit(bus)}>
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button variant="ghost" size="icon" onClick={() => handleDeleteBus(bus)}>
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))
@@ -308,6 +368,49 @@ export default function BusManagement() {
             </Table>
           </CardContent>
         </Card>
+
+        {/* Delete Confirmation Dialog */}
+        <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                {hasRelatedTrips ? 'Cannot Delete Bus' : 'Delete Bus'}
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                {hasRelatedTrips ? (
+                  <>
+                    This bus <strong>"{deletingBus?.registration_number}"</strong> has associated trips 
+                    and cannot be deleted. Please remove or reassign all trips first.
+                  </>
+                ) : (
+                  <>
+                    Are you sure you want to delete bus <strong>"{deletingBus?.registration_number}"</strong>? 
+                    This action cannot be undone.
+                  </>
+                )}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              {hasRelatedTrips ? (
+                <AlertDialogAction onClick={() => setDeleteDialogOpen(false)}>
+                  OK
+                </AlertDialogAction>
+              ) : (
+                <>
+                  <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={confirmDeleteBus}
+                    disabled={deleting}
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  >
+                    {deleting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                    Delete
+                  </AlertDialogAction>
+                </>
+              )}
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </DashboardLayout>
   );
