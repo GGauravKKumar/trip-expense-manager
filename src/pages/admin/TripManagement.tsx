@@ -25,6 +25,7 @@ export default function TripManagement() {
   const [trips, setTrips] = useState<Trip[]>([]);
   const [buses, setBuses] = useState<Bus[]>([]);
   const [drivers, setDrivers] = useState<Profile[]>([]);
+  const [busyDriverIds, setBusyDriverIds] = useState<Set<string>>(new Set());
   const [routes, setRoutes] = useState<Route[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -261,7 +262,21 @@ export default function TripManagement() {
     fetchBuses();
     fetchDrivers();
     fetchRoutes();
+    fetchBusyDrivers();
   }, []);
+
+  async function fetchBusyDrivers() {
+    // Get drivers who have in_progress trips
+    const { data } = await supabase
+      .from('trips')
+      .select('driver_id')
+      .eq('status', 'in_progress');
+    
+    if (data) {
+      const busyIds = new Set(data.map(t => t.driver_id).filter(Boolean) as string[]);
+      setBusyDriverIds(busyIds);
+    }
+  }
 
   async function fetchTrips() {
     const { data, error } = await supabase
@@ -354,6 +369,22 @@ export default function TripManagement() {
     e.preventDefault();
     setSubmitting(true);
 
+    // Check if driver is already on an in-progress trip (skip if editing the same trip or if status is not scheduled/in_progress)
+    if (formData.driver_id && (formData.status === 'scheduled' || formData.status === 'in_progress')) {
+      const { data: existingTrips } = await supabase
+        .from('trips')
+        .select('id, trip_number')
+        .eq('driver_id', formData.driver_id)
+        .eq('status', 'in_progress')
+        .neq('id', editingTrip?.id || '');
+      
+      if (existingTrips && existingTrips.length > 0) {
+        toast.error(`Driver is already on trip ${existingTrips[0].trip_number}. Complete that trip first before assigning a new one.`);
+        setSubmitting(false);
+        return;
+      }
+    }
+
     // Validate odometer readings when completing a trip
     if (formData.status === 'completed' && editingTrip) {
       // Fetch current trip data to check odometer readings
@@ -408,6 +439,7 @@ export default function TripManagement() {
         toast.success('Trip updated successfully');
         setDialogOpen(false);
         fetchTrips();
+        fetchBusyDrivers();
       }
     } else {
       const { error } = await supabase.from('trips').insert(payload);
@@ -418,6 +450,7 @@ export default function TripManagement() {
         toast.success('Trip created successfully');
         setDialogOpen(false);
         fetchTrips();
+        fetchBusyDrivers();
       }
     }
     setSubmitting(false);
@@ -505,11 +538,19 @@ export default function TripManagement() {
                         <SelectValue placeholder="Select driver" />
                       </SelectTrigger>
                       <SelectContent>
-                        {drivers.map((driver) => (
-                          <SelectItem key={driver.id} value={driver.id}>
-                            {driver.full_name}
-                          </SelectItem>
-                        ))}
+                        {drivers.map((driver) => {
+                          const isBusy = busyDriverIds.has(driver.id) && editingTrip?.driver_id !== driver.id;
+                          return (
+                            <SelectItem 
+                              key={driver.id} 
+                              value={driver.id}
+                              disabled={isBusy}
+                            >
+                              {driver.full_name}
+                              {isBusy && <span className="text-muted-foreground ml-2">(On Trip)</span>}
+                            </SelectItem>
+                          );
+                        })}
                       </SelectContent>
                     </Select>
                   </div>
