@@ -76,8 +76,14 @@ export interface Trip {
   bus_id: string | null;
   driver_id: string | null;
   route_id: string;
+  schedule_id: string | null;
+  trip_date: string | null;
   start_date: string;
   end_date: string | null;
+  departure_time: string | null;
+  arrival_time: string | null;
+  return_departure_time: string | null;
+  return_arrival_time: string | null;
   status: TripStatus;
   notes: string | null;
   trip_type: TripType;

@@ -664,7 +664,7 @@ export default function TripManagement() {
                   <TableHead>Bus</TableHead>
                   <TableHead>Driver</TableHead>
                   <TableHead>Route</TableHead>
-                  <TableHead>Start Date</TableHead>
+                  <TableHead>Date & Time</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Revenue</TableHead>
                   <TableHead>Expense</TableHead>
@@ -729,11 +729,20 @@ export default function TripManagement() {
                         </TableCell>
                         <TableCell>{(trip.route as any)?.route_name}</TableCell>
                         <TableCell>
-                          {new Date(trip.start_date).toLocaleDateString('en-IN', {
-                            day: '2-digit',
-                            month: 'short',
-                            year: 'numeric',
-                          })}
+                          <div className="text-sm">
+                            <div className="font-medium">
+                              {new Date(trip.start_date).toLocaleDateString('en-IN', {
+                                day: '2-digit',
+                                month: 'short',
+                                year: 'numeric',
+                              })}
+                            </div>
+                            <div className="text-muted-foreground text-xs">
+                              {trip.departure_time || new Date(trip.start_date).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                              {' → '}
+                              {trip.arrival_time || (trip.end_date ? new Date(trip.end_date).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '-')}
+                            </div>
+                          </div>
                         </TableCell>
                         <TableCell>{getStatusBadge(trip.status)}</TableCell>
                         <TableCell className="text-green-600 font-medium">
