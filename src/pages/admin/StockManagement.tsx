@@ -42,6 +42,7 @@ export default function StockManagement() {
     quantity: 0,
     low_stock_threshold: 50,
     unit: 'pieces',
+    unit_price: 0,
     notes: '',
   });
   const [updateData, setUpdateData] = useState({
@@ -117,13 +118,14 @@ export default function StockManagement() {
     }
   }
 
-  function handleEdit(item: StockItem) {
+  function handleEdit(item: StockItem & { unit_price?: number }) {
     setEditingItem(item);
     setFormData({
       item_name: item.item_name,
       quantity: item.quantity,
       low_stock_threshold: item.low_stock_threshold,
       unit: item.unit,
+      unit_price: item.unit_price || 0,
       notes: item.notes || '',
     });
     setDialogOpen(true);
@@ -136,6 +138,7 @@ export default function StockManagement() {
       quantity: 0,
       low_stock_threshold: 50,
       unit: 'pieces',
+      unit_price: 0,
       notes: '',
     });
     setDialogOpen(true);
@@ -173,6 +176,7 @@ export default function StockManagement() {
       quantity: formData.quantity,
       low_stock_threshold: formData.low_stock_threshold,
       unit: formData.unit,
+      unit_price: formData.unit_price,
       notes: formData.notes || null,
       last_updated_by: profile?.id || null,
     };
@@ -355,15 +359,28 @@ export default function StockManagement() {
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="low_stock_threshold">Low Stock Alert Threshold</Label>
-                  <Input
-                    id="low_stock_threshold"
-                    type="number"
-                    value={formData.low_stock_threshold}
-                    onChange={(e) => setFormData({ ...formData, low_stock_threshold: parseInt(e.target.value) || 50 })}
-                  />
-                  <p className="text-xs text-muted-foreground">Alert when stock falls below this number</p>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="low_stock_threshold">Low Stock Threshold</Label>
+                    <Input
+                      id="low_stock_threshold"
+                      type="number"
+                      value={formData.low_stock_threshold}
+                      onChange={(e) => setFormData({ ...formData, low_stock_threshold: parseInt(e.target.value) || 50 })}
+                    />
+                    <p className="text-xs text-muted-foreground">Alert below this</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="unit_price">Unit Price (₹)</Label>
+                    <Input
+                      id="unit_price"
+                      type="number"
+                      step="0.01"
+                      value={formData.unit_price}
+                      onChange={(e) => setFormData({ ...formData, unit_price: parseFloat(e.target.value) || 0 })}
+                    />
+                    <p className="text-xs text-muted-foreground">Cost per unit</p>
+                  </div>
                 </div>
 
                 <div className="space-y-2">
