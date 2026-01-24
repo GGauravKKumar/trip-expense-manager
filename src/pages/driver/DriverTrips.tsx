@@ -73,7 +73,8 @@ export default function DriverTrips() {
       return_start: trip.odometer_return_start?.toString() || '',
       return_end: trip.odometer_return_end?.toString() || '',
     });
-    setWaterQuantity('');
+    // Pre-fill with existing water taken
+    setWaterQuantity(trip.water_taken?.toString() || '0');
     setDialogOpen(true);
   }
 
@@ -116,10 +117,14 @@ export default function DriverTrips() {
 
     setSubmitting(true);
 
-    // Handle water stock deduction if quantity provided
-    const waterQty = parseInt(waterQuantity);
-    if (waterStock && waterQty > 0) {
-      if (waterQty > waterStock.quantity) {
+    // Handle water stock - only deduct the DIFFERENCE from previous amount
+    const newWaterQty = parseInt(waterQuantity) || 0;
+    const previousWaterQty = selectedTrip.water_taken || 0;
+    const waterDifference = newWaterQty - previousWaterQty;
+
+    if (waterStock && waterDifference > 0) {
+      // Taking more water
+      if (waterDifference > waterStock.quantity) {
         toast.error(`Not enough water in stock. Available: ${waterStock.quantity} ${waterStock.unit}`);
         setSubmitting(false);
         return;
@@ -132,14 +137,14 @@ export default function DriverTrips() {
         .eq('user_id', user!.id)
         .single();
 
-      // Create stock transaction
+      // Create stock transaction for the difference
       const { error: txError } = await supabase.from('stock_transactions').insert({
         stock_item_id: waterStock.id,
         transaction_type: 'remove' as const,
-        quantity_change: waterQty,
+        quantity_change: waterDifference,
         previous_quantity: waterStock.quantity,
-        new_quantity: waterStock.quantity - waterQty,
-        notes: `Trip ${selectedTrip.trip_number} - Driver pickup`,
+        new_quantity: waterStock.quantity - waterDifference,
+        notes: `Trip ${selectedTrip.trip_number} - Driver pickup${previousWaterQty > 0 ? ' (additional)' : ''}`,
         created_by: profile?.id,
       });
 
@@ -153,7 +158,46 @@ export default function DriverTrips() {
       const { error: stockError } = await supabase
         .from('stock_items')
         .update({ 
-          quantity: waterStock.quantity - waterQty,
+          quantity: waterStock.quantity - waterDifference,
+          last_updated_by: profile?.id,
+        })
+        .eq('id', waterStock.id);
+
+      if (stockError) {
+        toast.error('Failed to update water stock');
+        setSubmitting(false);
+        return;
+      }
+    } else if (waterStock && waterDifference < 0) {
+      // Returning water (reduced quantity) - add back to stock
+      const returnQty = Math.abs(waterDifference);
+      
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('user_id', user!.id)
+        .single();
+
+      const { error: txError } = await supabase.from('stock_transactions').insert({
+        stock_item_id: waterStock.id,
+        transaction_type: 'add' as const,
+        quantity_change: returnQty,
+        previous_quantity: waterStock.quantity,
+        new_quantity: waterStock.quantity + returnQty,
+        notes: `Trip ${selectedTrip.trip_number} - Driver returned water`,
+        created_by: profile?.id,
+      });
+
+      if (txError) {
+        toast.error('Failed to record water return');
+        setSubmitting(false);
+        return;
+      }
+
+      const { error: stockError } = await supabase
+        .from('stock_items')
+        .update({ 
+          quantity: waterStock.quantity + returnQty,
           last_updated_by: profile?.id,
         })
         .eq('id', waterStock.id);
@@ -165,15 +209,23 @@ export default function DriverTrips() {
       }
     }
 
+    // Update trip with odometer and water_taken
+    const tripUpdateData: Record<string, number | null> = {
+      ...updateData,
+      water_taken: newWaterQty,
+    };
+
     const { error } = await supabase
       .from('trips')
-      .update(updateData)
+      .update(tripUpdateData)
       .eq('id', selectedTrip.id);
 
     if (error) {
       toast.error('Failed to update odometer readings');
     } else {
-      const waterMsg = waterQty > 0 ? ` | Water taken: ${waterQty}` : '';
+      const waterMsg = waterDifference !== 0 
+        ? ` | Water: ${waterDifference > 0 ? '+' : ''}${waterDifference}` 
+        : '';
       toast.success(`Odometer readings updated${waterMsg}`);
       setDialogOpen(false);
       fetchTrips();
@@ -438,16 +490,22 @@ export default function DriverTrips() {
               <div className="p-4 border rounded-lg space-y-3">
                 <div className="flex items-center gap-2">
                   <Droplets className="h-5 w-5 text-blue-500" />
-                  <span className="font-medium">Take Water</span>
+                  <span className="font-medium">Water Boxes</span>
                   <Badge variant="outline" className="ml-auto">
                     Available: {waterStock.quantity} {waterStock.unit}
                   </Badge>
                 </div>
+                {(selectedTrip?.water_taken ?? 0) > 0 && (
+                  <p className="text-sm text-muted-foreground">
+                    Previously taken: {selectedTrip?.water_taken} {waterStock.unit}
+                  </p>
+                )}
                 <div className="flex items-center gap-3">
+                  <Label className="text-sm">Total to take:</Label>
                   <Input
                     type="number"
                     min="0"
-                    max={waterStock.quantity}
+                    max={(selectedTrip?.water_taken ?? 0) + waterStock.quantity}
                     placeholder="0"
                     value={waterQuantity}
                     onChange={(e) => setWaterQuantity(e.target.value)}
@@ -455,9 +513,22 @@ export default function DriverTrips() {
                   />
                   <span className="text-sm text-muted-foreground">{waterStock.unit}</span>
                 </div>
-                {parseInt(waterQuantity) > waterStock.quantity && (
-                  <p className="text-sm text-destructive">Not enough stock available</p>
-                )}
+                {(() => {
+                  const newQty = parseInt(waterQuantity) || 0;
+                  const prevQty = selectedTrip?.water_taken ?? 0;
+                  const diff = newQty - prevQty;
+                  if (diff > 0 && diff > waterStock.quantity) {
+                    return <p className="text-sm text-destructive">Not enough stock available (need {diff} more)</p>;
+                  }
+                  if (diff !== 0) {
+                    return (
+                      <p className={`text-sm ${diff > 0 ? 'text-orange-600' : 'text-green-600'}`}>
+                        {diff > 0 ? `Will deduct ${diff} from stock` : `Will return ${Math.abs(diff)} to stock`}
+                      </p>
+                    );
+                  }
+                  return null;
+                })()}
               </div>
             )}
 

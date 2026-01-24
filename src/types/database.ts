@@ -107,6 +107,8 @@ export interface Trip {
   return_revenue_agent: number | null;
   return_total_revenue: number | null;
   return_total_expense: number | null;
+  // Water taken
+  water_taken: number | null;
   created_at: string;
   updated_at: string;
   bus?: Bus | { registration_number: string; bus_name?: string | null } | null;
