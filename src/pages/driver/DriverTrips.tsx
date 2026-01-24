@@ -272,7 +272,7 @@ export default function DriverTrips() {
                   <TableHead>Type</TableHead>
                   <TableHead>Bus</TableHead>
                   <TableHead>Route</TableHead>
-                  <TableHead>Date</TableHead>
+                  <TableHead>Date & Time</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Odometer</TableHead>
                   <TableHead>Distance</TableHead>
@@ -308,7 +308,33 @@ export default function DriverTrips() {
                         </TableCell>
                         <TableCell>{(t.bus as any)?.registration_number}</TableCell>
                         <TableCell>{(t.route as any)?.route_name}</TableCell>
-                        <TableCell>{new Date(t.start_date).toLocaleDateString('en-IN')}</TableCell>
+                        <TableCell>
+                          <div className="text-sm space-y-1">
+                            <div>
+                              <div className="font-medium">
+                                {new Date(t.start_date).toLocaleDateString('en-IN', {
+                                  day: '2-digit',
+                                  month: 'short',
+                                  year: 'numeric',
+                                })}
+                              </div>
+                              <div className="text-muted-foreground text-xs flex items-center gap-1">
+                                <ArrowRight className="h-3 w-3" />
+                                {t.departure_time || new Date(t.start_date).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                                {' → '}
+                                {t.arrival_time || '-'}
+                              </div>
+                            </div>
+                            {t.trip_type === 'two_way' && (
+                              <div className="text-muted-foreground text-xs flex items-center gap-1 border-t pt-1">
+                                <ArrowLeft className="h-3 w-3" />
+                                {t.return_departure_time || '-'}
+                                {' → '}
+                                {t.return_arrival_time || '-'}
+                              </div>
+                            )}
+                          </div>
+                        </TableCell>
                         <TableCell>{getStatusBadge(t.status)}</TableCell>
                         <TableCell>
                           {t.odometer_start ? (

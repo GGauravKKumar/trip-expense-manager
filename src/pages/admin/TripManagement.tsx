@@ -11,7 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
 import { Trip, TripStatus, TripType, Bus, Profile, Route } from '@/types/database';
-import { Plus, Pencil, Loader2, Download, Eye, FileSpreadsheet, IndianRupee, Calendar, ArrowLeftRight, ArrowRight } from 'lucide-react';
+import { Plus, Pencil, Loader2, Download, Eye, FileSpreadsheet, IndianRupee, Calendar, ArrowLeftRight, ArrowRight, ArrowLeft } from 'lucide-react';
 import { toast } from 'sonner';
 import { exportToExcel, formatCurrency, formatDate } from '@/lib/exportUtils';
 import { exportTripSheet, mapTripToSheetData } from '@/lib/tripSheetExport';
@@ -729,19 +729,30 @@ export default function TripManagement() {
                         </TableCell>
                         <TableCell>{(trip.route as any)?.route_name}</TableCell>
                         <TableCell>
-                          <div className="text-sm">
-                            <div className="font-medium">
-                              {new Date(trip.start_date).toLocaleDateString('en-IN', {
-                                day: '2-digit',
-                                month: 'short',
-                                year: 'numeric',
-                              })}
+                          <div className="text-sm space-y-1">
+                            <div>
+                              <div className="font-medium">
+                                {new Date(trip.start_date).toLocaleDateString('en-IN', {
+                                  day: '2-digit',
+                                  month: 'short',
+                                  year: 'numeric',
+                                })}
+                              </div>
+                              <div className="text-muted-foreground text-xs flex items-center gap-1">
+                                <ArrowRight className="h-3 w-3" />
+                                {trip.departure_time || new Date(trip.start_date).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                                {' → '}
+                                {trip.arrival_time || (trip.end_date ? new Date(trip.end_date).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '-')}
+                              </div>
                             </div>
-                            <div className="text-muted-foreground text-xs">
-                              {trip.departure_time || new Date(trip.start_date).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
-                              {' → '}
-                              {trip.arrival_time || (trip.end_date ? new Date(trip.end_date).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '-')}
-                            </div>
+                            {trip.trip_type === 'two_way' && (
+                              <div className="text-muted-foreground text-xs flex items-center gap-1 border-t pt-1">
+                                <ArrowLeft className="h-3 w-3" />
+                                {trip.return_departure_time || '-'}
+                                {' → '}
+                                {trip.return_arrival_time || '-'}
+                              </div>
+                            )}
                           </div>
                         </TableCell>
                         <TableCell>{getStatusBadge(trip.status)}</TableCell>
