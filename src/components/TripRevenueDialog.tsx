@@ -16,6 +16,68 @@ interface TripRevenueDialogProps {
   onSuccess: () => void;
 }
 
+// Moved outside the component to prevent re-creation on each render
+const RevenueFields = ({ prefix = '', values, onChange }: { 
+  prefix?: string; 
+  values: { cash: string; online: string; paytm: string; others: string; agent: string };
+  onChange: (field: string, value: string) => void;
+}) => (
+  <div className="space-y-4">
+    <div className="grid grid-cols-2 gap-4">
+      <div className="space-y-2">
+        <Label htmlFor={`${prefix}revenue_cash`}>Cash (₹)</Label>
+        <Input
+          id={`${prefix}revenue_cash`}
+          type="number"
+          value={values.cash}
+          onChange={(e) => onChange(`${prefix}revenue_cash`, e.target.value)}
+          placeholder="0"
+        />
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor={`${prefix}revenue_online`}>Online/App (₹)</Label>
+        <Input
+          id={`${prefix}revenue_online`}
+          type="number"
+          value={values.online}
+          onChange={(e) => onChange(`${prefix}revenue_online`, e.target.value)}
+          placeholder="0"
+        />
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor={`${prefix}revenue_paytm`}>Paytm (₹)</Label>
+        <Input
+          id={`${prefix}revenue_paytm`}
+          type="number"
+          value={values.paytm}
+          onChange={(e) => onChange(`${prefix}revenue_paytm`, e.target.value)}
+          placeholder="0"
+        />
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor={`${prefix}revenue_others`}>Others (₹)</Label>
+        <Input
+          id={`${prefix}revenue_others`}
+          type="number"
+          value={values.others}
+          onChange={(e) => onChange(`${prefix}revenue_others`, e.target.value)}
+          placeholder="0"
+        />
+      </div>
+    </div>
+    <div className="space-y-2">
+      <Label htmlFor={`${prefix}revenue_agent`}>Agent Booking (₹)</Label>
+      <Input
+        id={`${prefix}revenue_agent`}
+        type="number"
+        value={values.agent}
+        onChange={(e) => onChange(`${prefix}revenue_agent`, e.target.value)}
+        placeholder="0"
+      />
+    </div>
+  </div>
+);
+
 export default function TripRevenueDialog({ open, onOpenChange, trip, onSuccess }: TripRevenueDialogProps) {
   const [submitting, setSubmitting] = useState(false);
   const [gstPercentage, setGstPercentage] = useState(18);
@@ -129,69 +191,8 @@ export default function TripRevenueDialog({ open, onOpenChange, trip, onSuccess 
   const gstAmount = grandTotal * (gstPercentage / (100 + gstPercentage));
   const netRevenue = grandTotal - gstAmount;
 
-  const RevenueFields = ({ prefix = '', values, onChange }: { 
-    prefix?: string; 
-    values: { cash: string; online: string; paytm: string; others: string; agent: string };
-    onChange: (field: string, value: string) => void;
-  }) => (
-    <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <Label htmlFor={`${prefix}revenue_cash`}>Cash (₹)</Label>
-          <Input
-            id={`${prefix}revenue_cash`}
-            type="number"
-            value={values.cash}
-            onChange={(e) => onChange(`${prefix}revenue_cash`, e.target.value)}
-            placeholder="0"
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor={`${prefix}revenue_online`}>Online/App (₹)</Label>
-          <Input
-            id={`${prefix}revenue_online`}
-            type="number"
-            value={values.online}
-            onChange={(e) => onChange(`${prefix}revenue_online`, e.target.value)}
-            placeholder="0"
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor={`${prefix}revenue_paytm`}>Paytm (₹)</Label>
-          <Input
-            id={`${prefix}revenue_paytm`}
-            type="number"
-            value={values.paytm}
-            onChange={(e) => onChange(`${prefix}revenue_paytm`, e.target.value)}
-            placeholder="0"
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor={`${prefix}revenue_others`}>Others (₹)</Label>
-          <Input
-            id={`${prefix}revenue_others`}
-            type="number"
-            value={values.others}
-            onChange={(e) => onChange(`${prefix}revenue_others`, e.target.value)}
-            placeholder="0"
-          />
-        </div>
-      </div>
-      <div className="space-y-2">
-        <Label htmlFor={`${prefix}revenue_agent`}>Agent Booking (₹)</Label>
-        <Input
-          id={`${prefix}revenue_agent`}
-          type="number"
-          value={values.agent}
-          onChange={(e) => onChange(`${prefix}revenue_agent`, e.target.value)}
-          placeholder="0"
-        />
-      </div>
-    </div>
-  );
-
   const handleFieldChange = (field: string, value: string) => {
-    setFormData({ ...formData, [field]: value });
+    setFormData(prev => ({ ...prev, [field]: value }));
   };
 
   return (
