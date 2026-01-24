@@ -10,8 +10,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
-import { Trip, TripStatus } from '@/types/database';
-import { Loader2, Gauge, ArrowRight, ArrowLeft } from 'lucide-react';
+import { Trip, TripStatus, StockItem } from '@/types/database';
+import { Loader2, Gauge, ArrowRight, ArrowLeft, Droplets } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function DriverTrips() {
@@ -21,6 +21,8 @@ export default function DriverTrips() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedTrip, setSelectedTrip] = useState<Trip | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [waterStock, setWaterStock] = useState<StockItem | null>(null);
+  const [waterQuantity, setWaterQuantity] = useState('');
   const [odometerData, setOdometerData] = useState({
     start: '',
     end: '',
@@ -28,7 +30,12 @@ export default function DriverTrips() {
     return_end: '',
   });
 
-  useEffect(() => { if (user) fetchTrips(); }, [user]);
+  useEffect(() => { 
+    if (user) {
+      fetchTrips();
+      fetchWaterStock();
+    }
+  }, [user]);
 
   async function fetchTrips() {
     const { data: profile } = await supabase.from('profiles').select('id').eq('user_id', user!.id).single();
@@ -44,6 +51,20 @@ export default function DriverTrips() {
     setLoading(false);
   }
 
+  async function fetchWaterStock() {
+    // Fetch water stock item (case-insensitive search for "water")
+    const { data } = await supabase
+      .from('stock_items')
+      .select('*')
+      .ilike('item_name', '%water%')
+      .limit(1)
+      .single();
+    
+    if (data) {
+      setWaterStock(data as StockItem);
+    }
+  }
+
   function handleUpdateOdometer(trip: Trip) {
     setSelectedTrip(trip);
     setOdometerData({
@@ -52,6 +73,7 @@ export default function DriverTrips() {
       return_start: trip.odometer_return_start?.toString() || '',
       return_end: trip.odometer_return_end?.toString() || '',
     });
+    setWaterQuantity('');
     setDialogOpen(true);
   }
 
@@ -94,6 +116,55 @@ export default function DriverTrips() {
 
     setSubmitting(true);
 
+    // Handle water stock deduction if quantity provided
+    const waterQty = parseInt(waterQuantity);
+    if (waterStock && waterQty > 0) {
+      if (waterQty > waterStock.quantity) {
+        toast.error(`Not enough water in stock. Available: ${waterStock.quantity} ${waterStock.unit}`);
+        setSubmitting(false);
+        return;
+      }
+
+      // Get current user's profile for transaction record
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('user_id', user!.id)
+        .single();
+
+      // Create stock transaction
+      const { error: txError } = await supabase.from('stock_transactions').insert({
+        stock_item_id: waterStock.id,
+        transaction_type: 'remove' as const,
+        quantity_change: waterQty,
+        previous_quantity: waterStock.quantity,
+        new_quantity: waterStock.quantity - waterQty,
+        notes: `Trip ${selectedTrip.trip_number} - Driver pickup`,
+        created_by: profile?.id,
+      });
+
+      if (txError) {
+        toast.error('Failed to record water pickup');
+        setSubmitting(false);
+        return;
+      }
+
+      // Update stock quantity
+      const { error: stockError } = await supabase
+        .from('stock_items')
+        .update({ 
+          quantity: waterStock.quantity - waterQty,
+          last_updated_by: profile?.id,
+        })
+        .eq('id', waterStock.id);
+
+      if (stockError) {
+        toast.error('Failed to update water stock');
+        setSubmitting(false);
+        return;
+      }
+    }
+
     const { error } = await supabase
       .from('trips')
       .update(updateData)
@@ -102,9 +173,11 @@ export default function DriverTrips() {
     if (error) {
       toast.error('Failed to update odometer readings');
     } else {
-      toast.success('Odometer readings updated');
+      const waterMsg = waterQty > 0 ? ` | Water taken: ${waterQty}` : '';
+      toast.success(`Odometer readings updated${waterMsg}`);
       setDialogOpen(false);
       fetchTrips();
+      fetchWaterStock(); // Refresh stock
     }
     setSubmitting(false);
   }
@@ -357,6 +430,34 @@ export default function DriverTrips() {
                     (calculateDistance(odometerData.return_start, odometerData.return_end) || 0)
                   } km
                 </p>
+              </div>
+            )}
+
+            {/* Water Stock Section */}
+            {waterStock && (
+              <div className="p-4 border rounded-lg space-y-3">
+                <div className="flex items-center gap-2">
+                  <Droplets className="h-5 w-5 text-blue-500" />
+                  <span className="font-medium">Take Water</span>
+                  <Badge variant="outline" className="ml-auto">
+                    Available: {waterStock.quantity} {waterStock.unit}
+                  </Badge>
+                </div>
+                <div className="flex items-center gap-3">
+                  <Input
+                    type="number"
+                    min="0"
+                    max={waterStock.quantity}
+                    placeholder="0"
+                    value={waterQuantity}
+                    onChange={(e) => setWaterQuantity(e.target.value)}
+                    className="w-24"
+                  />
+                  <span className="text-sm text-muted-foreground">{waterStock.unit}</span>
+                </div>
+                {parseInt(waterQuantity) > waterStock.quantity && (
+                  <p className="text-sm text-destructive">Not enough stock available</p>
+                )}
               </div>
             )}
 
