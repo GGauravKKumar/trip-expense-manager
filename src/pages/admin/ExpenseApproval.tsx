@@ -71,7 +71,7 @@ export default function ExpenseApproval() {
     if (error) {
       toast.error('Failed to fetch expenses');
     } else {
-      setExpenses(data as Expense[]);
+      setExpenses((data || []) as unknown as Expense[]);
     }
     setLoading(false);
   }

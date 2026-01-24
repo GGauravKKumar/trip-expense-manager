@@ -143,6 +143,7 @@ export interface Expense {
   admin_remarks: string | null;
   approved_by: string | null;
   approved_at: string | null;
+  fuel_quantity: number | null;
   created_at: string;
   updated_at: string;
   category?: ExpenseCategory;
