@@ -36,7 +36,7 @@ export default function DriverExpenses() {
     
     const [{ data: exp }, { data: trp }, { data: cat }] = await Promise.all([
       supabase.from('expenses').select(`*, category:expense_categories(name), trip:trips(trip_number)`).eq('submitted_by', profile.id).order('created_at', { ascending: false }),
-      supabase.from('trips').select('*').eq('driver_id', profile.id).in('status', ['scheduled', 'in_progress']),
+      supabase.from('trips').select('*').eq('driver_id', profile.id).eq('status', 'in_progress'),
       supabase.from('expense_categories').select('*'),
     ]);
     setExpenses(exp as Expense[] || []);
