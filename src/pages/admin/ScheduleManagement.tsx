@@ -336,14 +336,14 @@ export default function ScheduleManagement() {
                 <div className="space-y-2">
                   <Label htmlFor="driver_id">Default Driver</Label>
                   <Select
-                    value={formData.driver_id}
-                    onValueChange={(value) => setFormData({ ...formData, driver_id: value })}
+                    value={formData.driver_id || "none"}
+                    onValueChange={(value) => setFormData({ ...formData, driver_id: value === "none" ? "" : value })}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Select driver (optional)" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">No default driver</SelectItem>
+                      <SelectItem value="none">No default driver</SelectItem>
                       {drivers.map((driver) => (
                         <SelectItem key={driver.id} value={driver.id}>
                           {driver.full_name}
