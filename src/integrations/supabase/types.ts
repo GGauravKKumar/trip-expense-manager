@@ -375,6 +375,185 @@ export type Database = {
         }
         Relationships: []
       }
+      invoice_line_items: {
+        Row: {
+          amount: number
+          created_at: string
+          description: string
+          id: string
+          invoice_id: string
+          is_deduction: boolean
+          quantity: number
+          unit_price: number
+        }
+        Insert: {
+          amount?: number
+          created_at?: string
+          description: string
+          id?: string
+          invoice_id: string
+          is_deduction?: boolean
+          quantity?: number
+          unit_price?: number
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          description?: string
+          id?: string
+          invoice_id?: string
+          is_deduction?: boolean
+          quantity?: number
+          unit_price?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "invoice_line_items_invoice_id_fkey"
+            columns: ["invoice_id"]
+            isOneToOne: false
+            referencedRelation: "invoices"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      invoice_payments: {
+        Row: {
+          amount: number
+          created_at: string
+          created_by: string | null
+          id: string
+          invoice_id: string
+          notes: string | null
+          payment_date: string
+          payment_mode: string
+          reference_number: string | null
+        }
+        Insert: {
+          amount: number
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          invoice_id: string
+          notes?: string | null
+          payment_date?: string
+          payment_mode?: string
+          reference_number?: string | null
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          invoice_id?: string
+          notes?: string | null
+          payment_date?: string
+          payment_mode?: string
+          reference_number?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "invoice_payments_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invoice_payments_invoice_id_fkey"
+            columns: ["invoice_id"]
+            isOneToOne: false
+            referencedRelation: "invoices"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      invoices: {
+        Row: {
+          amount_paid: number
+          balance_due: number
+          bus_id: string | null
+          created_at: string
+          customer_address: string | null
+          customer_gst: string | null
+          customer_name: string
+          customer_phone: string | null
+          due_date: string | null
+          gst_amount: number
+          id: string
+          invoice_date: string
+          invoice_number: string
+          invoice_type: Database["public"]["Enums"]["invoice_type"]
+          notes: string | null
+          status: Database["public"]["Enums"]["invoice_status"]
+          subtotal: number
+          terms: string | null
+          total_amount: number
+          trip_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          amount_paid?: number
+          balance_due?: number
+          bus_id?: string | null
+          created_at?: string
+          customer_address?: string | null
+          customer_gst?: string | null
+          customer_name: string
+          customer_phone?: string | null
+          due_date?: string | null
+          gst_amount?: number
+          id?: string
+          invoice_date?: string
+          invoice_number: string
+          invoice_type?: Database["public"]["Enums"]["invoice_type"]
+          notes?: string | null
+          status?: Database["public"]["Enums"]["invoice_status"]
+          subtotal?: number
+          terms?: string | null
+          total_amount?: number
+          trip_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          amount_paid?: number
+          balance_due?: number
+          bus_id?: string | null
+          created_at?: string
+          customer_address?: string | null
+          customer_gst?: string | null
+          customer_name?: string
+          customer_phone?: string | null
+          due_date?: string | null
+          gst_amount?: number
+          id?: string
+          invoice_date?: string
+          invoice_number?: string
+          invoice_type?: Database["public"]["Enums"]["invoice_type"]
+          notes?: string | null
+          status?: Database["public"]["Enums"]["invoice_status"]
+          subtotal?: number
+          terms?: string | null
+          total_amount?: number
+          trip_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "invoices_bus_id_fkey"
+            columns: ["bus_id"]
+            isOneToOne: false
+            referencedRelation: "buses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invoices_trip_id_fkey"
+            columns: ["trip_id"]
+            isOneToOne: false
+            referencedRelation: "trips"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       notifications: {
         Row: {
           created_at: string
@@ -942,6 +1121,14 @@ export type Database = {
       app_role: "admin" | "driver" | "repair_org"
       bus_status: "active" | "maintenance" | "inactive"
       expense_status: "pending" | "approved" | "denied"
+      invoice_status:
+        | "draft"
+        | "sent"
+        | "partial"
+        | "paid"
+        | "overdue"
+        | "cancelled"
+      invoice_type: "customer" | "online_app" | "charter"
       ownership_type: "owned" | "partnership"
       stock_transaction_type: "add" | "remove" | "adjustment"
       tax_status: "pending" | "paid" | "overdue"
@@ -1076,6 +1263,15 @@ export const Constants = {
       app_role: ["admin", "driver", "repair_org"],
       bus_status: ["active", "maintenance", "inactive"],
       expense_status: ["pending", "approved", "denied"],
+      invoice_status: [
+        "draft",
+        "sent",
+        "partial",
+        "paid",
+        "overdue",
+        "cancelled",
+      ],
+      invoice_type: ["customer", "online_app", "charter"],
       ownership_type: ["owned", "partnership"],
       stock_transaction_type: ["add", "remove", "adjustment"],
       tax_status: ["pending", "paid", "overdue"],

@@ -10,6 +10,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { Profile } from '@/types/database';
 import { Loader2, Save, User } from 'lucide-react';
 import { toast } from 'sonner';
+import ChangePasswordCard from '@/components/ChangePasswordCard';
 
 export default function DriverProfile() {
   const { user } = useAuth();
@@ -169,6 +170,9 @@ export default function DriverProfile() {
             </form>
           </CardContent>
         </Card>
+
+        {/* Password Change */}
+        <ChangePasswordCard />
       </div>
     </DashboardLayout>
   );

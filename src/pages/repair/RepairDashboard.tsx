@@ -10,11 +10,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
-import { Loader2, Plus, Wrench, FileText, Upload, Camera } from 'lucide-react';
+import { Loader2, Plus, Wrench, FileText, Upload, Camera, User } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
+import ChangePasswordCard from '@/components/ChangePasswordCard';
 
 interface RepairRecord {
   id: string;
@@ -316,14 +318,23 @@ export default function RepairDashboard() {
               {organization.org_name} ({organization.org_code})
             </p>
           </div>
+        </div>
 
-          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-            <DialogTrigger asChild>
-              <Button>
-                <Plus className="h-4 w-4 mr-2" />
-                New Repair Record
-              </Button>
-            </DialogTrigger>
+        <Tabs defaultValue="records" className="space-y-4">
+          <TabsList>
+            <TabsTrigger value="records">Repair Records</TabsTrigger>
+            <TabsTrigger value="profile">Profile & Settings</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="records" className="space-y-6">
+            <div className="flex justify-end">
+              <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button>
+                    <Plus className="h-4 w-4 mr-2" />
+                    New Repair Record
+                  </Button>
+                </DialogTrigger>
             <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>Submit New Repair Record</DialogTitle>
@@ -628,6 +639,37 @@ export default function RepairDashboard() {
             )}
           </CardContent>
         </Card>
+      </TabsContent>
+
+      <TabsContent value="profile" className="space-y-6">
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <User className="h-5 w-5" />
+              Organization Details
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <Label className="text-muted-foreground">Organization Name</Label>
+                <p className="font-medium">{organization.org_name}</p>
+              </div>
+              <div>
+                <Label className="text-muted-foreground">Organization Code</Label>
+                <p className="font-medium">{organization.org_code}</p>
+              </div>
+            </div>
+            <div>
+              <Label className="text-muted-foreground">Email</Label>
+              <p className="font-medium">{user?.email}</p>
+            </div>
+          </CardContent>
+        </Card>
+
+        <ChangePasswordCard />
+      </TabsContent>
+    </Tabs>
       </div>
     </DashboardLayout>
   );

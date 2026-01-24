@@ -20,6 +20,7 @@ import ProfitabilityReport from "@/pages/admin/ProfitabilityReport";
 import AdminSettings from "@/pages/admin/Settings";
 import RepairOrganizations from "@/pages/admin/RepairOrganizations";
 import RepairRecords from "@/pages/admin/RepairRecords";
+import InvoiceManagement from "@/pages/admin/InvoiceManagement";
 import DriverDashboard from "@/pages/driver/DriverDashboard";
 import DriverTrips from "@/pages/driver/DriverTrips";
 import DriverExpenses from "@/pages/driver/DriverExpenses";
@@ -49,6 +50,7 @@ const App = () => (
             <Route path="/admin/schedules" element={<ProtectedRoute requiredRole="admin"><ScheduleManagement /></ProtectedRoute>} />
             <Route path="/admin/trips" element={<ProtectedRoute requiredRole="admin"><TripManagement /></ProtectedRoute>} />
             <Route path="/admin/expenses" element={<ProtectedRoute requiredRole="admin"><ExpenseApproval /></ProtectedRoute>} />
+            <Route path="/admin/invoices" element={<ProtectedRoute requiredRole="admin"><InvoiceManagement /></ProtectedRoute>} />
             <Route path="/admin/stock" element={<ProtectedRoute requiredRole="admin"><StockManagement /></ProtectedRoute>} />
             <Route path="/admin/profitability" element={<ProtectedRoute requiredRole="admin"><ProfitabilityReport /></ProtectedRoute>} />
             <Route path="/admin/settings" element={<ProtectedRoute requiredRole="admin"><AdminSettings /></ProtectedRoute>} />

@@ -19,6 +19,7 @@ import {
   Package,
   Building2,
   Wrench,
+  FileText,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useState } from 'react';
@@ -31,6 +32,7 @@ const adminLinks = [
   { href: '/admin/schedules', label: 'Schedules', icon: Calendar },
   { href: '/admin/trips', label: 'Trips', icon: MapPin },
   { href: '/admin/expenses', label: 'Approve Expenses', icon: FileCheck },
+  { href: '/admin/invoices', label: 'Invoices', icon: FileText },
   { href: '/admin/stock', label: 'Stock', icon: Package },
   { href: '/admin/repair-organizations', label: 'Repair Orgs', icon: Building2 },
   { href: '/admin/repair-records', label: 'Repair Records', icon: Wrench },
