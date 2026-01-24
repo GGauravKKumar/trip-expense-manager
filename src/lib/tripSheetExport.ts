@@ -19,6 +19,7 @@ interface TripSheetData {
   revenueOnline: number;
   revenuePaytm: number;
   revenueOthers: number;
+  revenueAgent: number;
   revenueTotal: number;
   // Expenses
   expenseDiesel: number;
@@ -37,10 +38,10 @@ export function exportTripSheet(trips: TripSheetData[], vehicleNo: string, filen
   
   // Create header rows
   const headerRows = [
-    ['BUS TRIP SHEET', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', ''],
-    ['Vehicle No', vehicleNo, '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', ''],
-    ['', 'Hours', '', 'Journey', '', 'Odometer Reading', '', '', '', '', '', 'Revenue from operation', '', '', '', '', 'Expenses in operation', '', '', '', '', '', '', ''],
-    ['Date', 'Out', 'Returned', 'From', 'To', 'Start', 'Finished', 'Dist KM', 'Reason for trip', 'Driver Sign', 'Direction', 'Cash', 'Online', 'Paytm', 'Others', 'G.Total', 'Diesel', 'Driver', 'Route Exp.', 'Maintenance', 'Govt. duty', 'Others', 'Total Exp.', 'N.Income'],
+    ['BUS TRIP SHEET', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', ''],
+    ['Vehicle No', vehicleNo, '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', ''],
+    ['', 'Hours', '', 'Journey', '', 'Odometer Reading', '', '', '', '', '', 'Revenue from operation', '', '', '', '', '', 'Expenses in operation', '', '', '', '', '', '', ''],
+    ['Date', 'Out', 'Returned', 'From', 'To', 'Start', 'Finished', 'Dist KM', 'Reason for trip', 'Driver Sign', 'Direction', 'Cash', 'Online', 'Paytm', 'Others', 'Agent', 'G.Total', 'Diesel', 'Driver', 'Route Exp.', 'Maintenance', 'Govt. duty', 'Others', 'Total Exp.', 'N.Income'],
   ];
 
   // Create data rows
@@ -60,6 +61,7 @@ export function exportTripSheet(trips: TripSheetData[], vehicleNo: string, filen
     trip.revenueOnline || 0,
     trip.revenuePaytm || 0,
     trip.revenueOthers || 0,
+    trip.revenueAgent || 0,
     trip.revenueTotal || 0,
     trip.expenseDiesel || 0,
     trip.expenseDriver || 0,
@@ -73,7 +75,7 @@ export function exportTripSheet(trips: TripSheetData[], vehicleNo: string, filen
 
   // Add empty rows to match template
   while (dataRows.length < 10) {
-    dataRows.push(['', '', '', '', '', '', '', 0, '', '', '', '', '', '', '', 0, '', '', '', '', '', '', 0, 0]);
+    dataRows.push(['', '', '', '', '', '', '', 0, '', '', '', '', '', '', '', '', 0, '', '', '', '', '', '', 0, 0]);
   }
 
   // Calculate totals
@@ -83,6 +85,7 @@ export function exportTripSheet(trips: TripSheetData[], vehicleNo: string, filen
     revenueOnline: acc.revenueOnline + (trip.revenueOnline || 0),
     revenuePaytm: acc.revenuePaytm + (trip.revenuePaytm || 0),
     revenueOthers: acc.revenueOthers + (trip.revenueOthers || 0),
+    revenueAgent: acc.revenueAgent + (trip.revenueAgent || 0),
     revenueTotal: acc.revenueTotal + (trip.revenueTotal || 0),
     expenseDiesel: acc.expenseDiesel + (trip.expenseDiesel || 0),
     expenseDriver: acc.expenseDriver + (trip.expenseDriver || 0),
@@ -98,6 +101,7 @@ export function exportTripSheet(trips: TripSheetData[], vehicleNo: string, filen
     revenueOnline: 0,
     revenuePaytm: 0,
     revenueOthers: 0,
+    revenueAgent: 0,
     revenueTotal: 0,
     expenseDiesel: 0,
     expenseDriver: 0,
@@ -112,7 +116,7 @@ export function exportTripSheet(trips: TripSheetData[], vehicleNo: string, filen
   // Add totals row
   dataRows.push([
     'TOTAL', '', '', '', '', '', '', totals.distanceKm, '', '', '',
-    totals.revenueCash, totals.revenueOnline, totals.revenuePaytm, totals.revenueOthers, totals.revenueTotal,
+    totals.revenueCash, totals.revenueOnline, totals.revenuePaytm, totals.revenueOthers, totals.revenueAgent, totals.revenueTotal,
     totals.expenseDiesel, totals.expenseDriver, totals.expenseRoute, totals.expenseMaintenance, totals.expenseGovtDuty, totals.expenseOthers, totals.expenseTotal, totals.netIncome
   ]);
 
@@ -139,6 +143,7 @@ export function exportTripSheet(trips: TripSheetData[], vehicleNo: string, filen
     { wch: 10 }, // Online
     { wch: 10 }, // Paytm
     { wch: 10 }, // Others
+    { wch: 10 }, // Agent
     { wch: 10 }, // G.Total
     { wch: 10 }, // Diesel
     { wch: 10 }, // Driver
@@ -152,12 +157,12 @@ export function exportTripSheet(trips: TripSheetData[], vehicleNo: string, filen
 
   // Merge cells for headers
   worksheet['!merges'] = [
-    { s: { r: 0, c: 0 }, e: { r: 0, c: 23 } }, // BUS TRIP SHEET
+    { s: { r: 0, c: 0 }, e: { r: 0, c: 24 } }, // BUS TRIP SHEET
     { s: { r: 2, c: 1 }, e: { r: 2, c: 2 } },  // Hours
     { s: { r: 2, c: 3 }, e: { r: 2, c: 4 } },  // Journey
     { s: { r: 2, c: 5 }, e: { r: 2, c: 6 } },  // Odometer Reading
-    { s: { r: 2, c: 11 }, e: { r: 2, c: 15 } }, // Revenue from operation
-    { s: { r: 2, c: 16 }, e: { r: 2, c: 22 } }, // Expenses in operation
+    { s: { r: 2, c: 11 }, e: { r: 2, c: 16 } }, // Revenue from operation (includes Agent now)
+    { s: { r: 2, c: 17 }, e: { r: 2, c: 23 } }, // Expenses in operation
   ];
 
   XLSX.utils.book_append_sheet(workbook, worksheet, 'Trip Sheet');
@@ -184,6 +189,7 @@ export function mapTripToSheetData(
     revenue_online?: number | null;
     revenue_paytm?: number | null;
     revenue_others?: number | null;
+    revenue_agent?: number | null;
     total_revenue?: number | null;
     // Return journey
     odometer_return_start?: number | null;
@@ -193,6 +199,7 @@ export function mapTripToSheetData(
     return_revenue_online?: number | null;
     return_revenue_paytm?: number | null;
     return_revenue_others?: number | null;
+    return_revenue_agent?: number | null;
     return_total_revenue?: number | null;
     return_total_expense?: number | null;
     bus?: { registration_number: string; bus_name: string | null } | null;
@@ -229,13 +236,15 @@ export function mapTripToSheetData(
     (Number(trip.revenue_cash) || 0) +
     (Number(trip.revenue_online) || 0) +
     (Number(trip.revenue_paytm) || 0) +
-    (Number(trip.revenue_others) || 0);
+    (Number(trip.revenue_others) || 0) +
+    (Number(trip.revenue_agent) || 0);
 
   const returnRevenueTotal =
     (Number(trip.return_revenue_cash) || 0) +
     (Number(trip.return_revenue_online) || 0) +
     (Number(trip.return_revenue_paytm) || 0) +
-    (Number(trip.return_revenue_others) || 0);
+    (Number(trip.return_revenue_others) || 0) +
+    (Number(trip.return_revenue_agent) || 0);
 
   const startDate = new Date(trip.start_date);
   const endDate = trip.end_date ? new Date(trip.end_date) : null;
@@ -266,6 +275,7 @@ export function mapTripToSheetData(
     revenueOnline: Number(trip.revenue_online) || 0,
     revenuePaytm: Number(trip.revenue_paytm) || 0,
     revenueOthers: Number(trip.revenue_others) || 0,
+    revenueAgent: Number(trip.revenue_agent) || 0,
     revenueTotal: outwardRevenueTotal,
     // Expenses (for two-way trips, split evenly or use return expense field)
     expenseDiesel: isTwoWay ? expenseByCategory.diesel / 2 : expenseByCategory.diesel,
@@ -302,6 +312,7 @@ export function mapTripToSheetData(
     revenueOnline: Number(trip.return_revenue_online) || 0,
     revenuePaytm: Number(trip.return_revenue_paytm) || 0,
     revenueOthers: Number(trip.return_revenue_others) || 0,
+    revenueAgent: Number(trip.return_revenue_agent) || 0,
     revenueTotal: returnRevenueTotal,
     // Expenses (split for return journey)
     expenseDiesel: expenseByCategory.diesel / 2,

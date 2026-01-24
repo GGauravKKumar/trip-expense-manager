@@ -21,6 +21,7 @@ interface TripRowData {
   revenueOnline: number;
   revenuePaytm: number;
   revenueOthers: number;
+  revenueAgent: number;
   revenueTotal: number;
   expenseDiesel: number;
   expenseDriver: number;
@@ -42,10 +43,10 @@ export function exportPeriodTripSheet(
   busData.forEach((bus) => {
     // Header rows
     const headerRows = [
-      ['BUS TRIP SHEET', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', ''],
-      [`Vehicle No: ${bus.vehicleNo}`, '', '', `Period: ${periodLabel}`, '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', ''],
-      ['', 'Hours', '', 'Journey', '', 'Odometer Reading', '', '', '', '', '', 'Revenue from operation', '', '', '', '', 'Expenses in operation', '', '', '', '', '', '', ''],
-      ['Date', 'Out', 'Returned', 'From', 'To', 'Start', 'Finished', 'Dist KM', 'Reason for trip', 'Driver', 'Direction', 'Cash', 'Online', 'Paytm', 'Others', 'G.Total', 'Diesel', 'Driver', 'Route Exp.', 'Maintenance', 'Govt. duty', 'Others', 'Total Exp.', 'N.Income'],
+      ['BUS TRIP SHEET', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', ''],
+      [`Vehicle No: ${bus.vehicleNo}`, '', '', `Period: ${periodLabel}`, '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', ''],
+      ['', 'Hours', '', 'Journey', '', 'Odometer Reading', '', '', '', '', '', 'Revenue from operation', '', '', '', '', '', 'Expenses in operation', '', '', '', '', '', '', ''],
+      ['Date', 'Out', 'Returned', 'From', 'To', 'Start', 'Finished', 'Dist KM', 'Reason for trip', 'Driver', 'Direction', 'Cash', 'Online', 'Paytm', 'Others', 'Agent', 'G.Total', 'Diesel', 'Driver', 'Route Exp.', 'Maintenance', 'Govt. duty', 'Others', 'Total Exp.', 'N.Income'],
     ];
 
     // Data rows
@@ -65,6 +66,7 @@ export function exportPeriodTripSheet(
       trip.revenueOnline || 0,
       trip.revenuePaytm || 0,
       trip.revenueOthers || 0,
+      trip.revenueAgent || 0,
       trip.revenueTotal || 0,
       trip.expenseDiesel || 0,
       trip.expenseDriver || 0,
@@ -84,6 +86,7 @@ export function exportPeriodTripSheet(
         revenueOnline: acc.revenueOnline + (trip.revenueOnline || 0),
         revenuePaytm: acc.revenuePaytm + (trip.revenuePaytm || 0),
         revenueOthers: acc.revenueOthers + (trip.revenueOthers || 0),
+        revenueAgent: acc.revenueAgent + (trip.revenueAgent || 0),
         revenueTotal: acc.revenueTotal + (trip.revenueTotal || 0),
         expenseDiesel: acc.expenseDiesel + (trip.expenseDiesel || 0),
         expenseDriver: acc.expenseDriver + (trip.expenseDriver || 0),
@@ -100,6 +103,7 @@ export function exportPeriodTripSheet(
         revenueOnline: 0,
         revenuePaytm: 0,
         revenueOthers: 0,
+        revenueAgent: 0,
         revenueTotal: 0,
         expenseDiesel: 0,
         expenseDriver: 0,
@@ -128,6 +132,7 @@ export function exportPeriodTripSheet(
       totals.revenueOnline,
       totals.revenuePaytm,
       totals.revenueOthers,
+      totals.revenueAgent,
       totals.revenueTotal,
       totals.expenseDiesel,
       totals.expenseDriver,
@@ -146,17 +151,17 @@ export function exportPeriodTripSheet(
       { wch: 12 }, { wch: 10 }, { wch: 10 }, { wch: 15 }, { wch: 15 },
       { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 15 }, { wch: 15 },
       { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 },
-      { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 12 },
-      { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 },
+      { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 },
+      { wch: 12 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 },
     ];
 
     worksheet['!merges'] = [
-      { s: { r: 0, c: 0 }, e: { r: 0, c: 23 } },
+      { s: { r: 0, c: 0 }, e: { r: 0, c: 24 } },
       { s: { r: 2, c: 1 }, e: { r: 2, c: 2 } },
       { s: { r: 2, c: 3 }, e: { r: 2, c: 4 } },
       { s: { r: 2, c: 5 }, e: { r: 2, c: 6 } },
-      { s: { r: 2, c: 11 }, e: { r: 2, c: 15 } },
-      { s: { r: 2, c: 16 }, e: { r: 2, c: 22 } },
+      { s: { r: 2, c: 11 }, e: { r: 2, c: 16 } }, // Revenue including Agent
+      { s: { r: 2, c: 17 }, e: { r: 2, c: 23 } }, // Expenses
     ];
 
     // Use bus registration as sheet name (truncate to 31 chars max for Excel)
@@ -238,6 +243,7 @@ export function mapTripToPeriodData(
     revenue_online: number | null;
     revenue_paytm: number | null;
     revenue_others: number | null;
+    revenue_agent?: number | null;
     total_revenue: number | null;
     // Return journey
     odometer_return_start?: number | null;
@@ -247,6 +253,7 @@ export function mapTripToPeriodData(
     return_revenue_online?: number | null;
     return_revenue_paytm?: number | null;
     return_revenue_others?: number | null;
+    return_revenue_agent?: number | null;
     return_total_revenue?: number | null;
     route?: { route_name: string; from_address?: string | null; to_address?: string | null } | null;
     driver?: { full_name: string } | null;
@@ -280,13 +287,15 @@ export function mapTripToPeriodData(
     (Number(trip.revenue_cash) || 0) +
     (Number(trip.revenue_online) || 0) +
     (Number(trip.revenue_paytm) || 0) +
-    (Number(trip.revenue_others) || 0);
+    (Number(trip.revenue_others) || 0) +
+    (Number(trip.revenue_agent) || 0);
 
   const returnRevenueTotal =
     (Number(trip.return_revenue_cash) || 0) +
     (Number(trip.return_revenue_online) || 0) +
     (Number(trip.return_revenue_paytm) || 0) +
-    (Number(trip.return_revenue_others) || 0);
+    (Number(trip.return_revenue_others) || 0) +
+    (Number(trip.return_revenue_agent) || 0);
 
   const startDate = new Date(trip.start_date);
   const endDate = trip.end_date ? new Date(trip.end_date) : null;
@@ -314,6 +323,7 @@ export function mapTripToPeriodData(
     revenueOnline: Number(trip.revenue_online) || 0,
     revenuePaytm: Number(trip.revenue_paytm) || 0,
     revenueOthers: Number(trip.revenue_others) || 0,
+    revenueAgent: Number(trip.revenue_agent) || 0,
     revenueTotal: outwardRevenueTotal,
     expenseDiesel: isTwoWay ? expenseByCategory.diesel / 2 : expenseByCategory.diesel,
     expenseDriver: isTwoWay ? expenseByCategory.driver / 2 : expenseByCategory.driver,
@@ -346,6 +356,7 @@ export function mapTripToPeriodData(
     revenueOnline: Number(trip.return_revenue_online) || 0,
     revenuePaytm: Number(trip.return_revenue_paytm) || 0,
     revenueOthers: Number(trip.return_revenue_others) || 0,
+    revenueAgent: Number(trip.return_revenue_agent) || 0,
     revenueTotal: returnRevenueTotal,
     expenseDiesel: expenseByCategory.diesel / 2,
     expenseDriver: expenseByCategory.driver / 2,

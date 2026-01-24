@@ -164,6 +164,7 @@ export default function TripManagement() {
             revenue_online: trip.revenue_online,
             revenue_paytm: trip.revenue_paytm,
             revenue_others: trip.revenue_others,
+            revenue_agent: trip.revenue_agent,
             total_revenue: trip.total_revenue,
             odometer_return_start: trip.odometer_return_start,
             odometer_return_end: trip.odometer_return_end,
@@ -172,6 +173,7 @@ export default function TripManagement() {
             return_revenue_online: trip.return_revenue_online,
             return_revenue_paytm: trip.return_revenue_paytm,
             return_revenue_others: trip.return_revenue_others,
+            return_revenue_agent: trip.return_revenue_agent,
             return_total_revenue: trip.return_total_revenue,
             bus: trip.bus as any,
             route: trip.route as any,
@@ -232,6 +234,7 @@ export default function TripManagement() {
           revenue_online: trip.revenue_online,
           revenue_paytm: trip.revenue_paytm,
           revenue_others: trip.revenue_others,
+          revenue_agent: trip.revenue_agent,
           total_revenue: trip.total_revenue,
           odometer_return_start: trip.odometer_return_start,
           odometer_return_end: trip.odometer_return_end,
@@ -240,6 +243,7 @@ export default function TripManagement() {
           return_revenue_online: trip.return_revenue_online,
           return_revenue_paytm: trip.return_revenue_paytm,
           return_revenue_others: trip.return_revenue_others,
+          return_revenue_agent: trip.return_revenue_agent,
           return_total_revenue: trip.return_total_revenue,
           bus: trip.bus as any,
           route: trip.route as any,
@@ -727,12 +731,14 @@ export default function TripManagement() {
                   </TableRow>
                 ) : (
                   filteredTrips.map((trip) => {
-                    // Calculate outward revenue
+                    // Use pre-calculated total_revenue which includes all sources (cash, online, paytm, others, agent)
+                    // Fallback to manual calculation only for backward compatibility
                     const outwardRevenue = Number(trip.total_revenue) || (
                       Number(trip.revenue_cash || 0) + 
                       Number(trip.revenue_online || 0) + 
                       Number(trip.revenue_paytm || 0) + 
-                      Number(trip.revenue_others || 0)
+                      Number(trip.revenue_others || 0) +
+                      Number(trip.revenue_agent || 0)
                     );
                     
                     // Calculate return revenue (for backward compatibility with old data)
@@ -740,7 +746,8 @@ export default function TripManagement() {
                       Number(trip.return_revenue_cash || 0) + 
                       Number(trip.return_revenue_online || 0) + 
                       Number(trip.return_revenue_paytm || 0) + 
-                      Number(trip.return_revenue_others || 0)
+                      Number(trip.return_revenue_others || 0) +
+                      Number(trip.return_revenue_agent || 0)
                     );
                     
                     const totalRevenue = outwardRevenue + returnRevenue;
