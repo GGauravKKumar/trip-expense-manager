@@ -164,7 +164,14 @@ export default function ProfitabilityReport() {
       const tripRevenue = outwardRevenue + returnRevenue;
       const tripExpense = expensesByTrip[trip.id]?.total || 0;
       const tripFuelLiters = expensesByTrip[trip.id]?.fuelLiters || 0;
-      const distance = (Number(trip.distance_traveled) || 0) + (Number(trip.distance_return) || 0);
+      
+      // Calculate distance from odometer readings (more reliable than stored distance columns)
+      const outwardDistance = (Number(trip.odometer_end) || 0) - (Number(trip.odometer_start) || 0);
+      const returnDistance = trip.trip_type === 'two_way' 
+        ? (Number(trip.odometer_return_end) || 0) - (Number(trip.odometer_return_start) || 0)
+        : 0;
+      const distance = Math.max(0, outwardDistance) + Math.max(0, returnDistance);
+      
       const tripProfit = tripRevenue - tripExpense;
 
       // Calculate company share based on ownership
