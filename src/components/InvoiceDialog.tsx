@@ -32,6 +32,7 @@ export default function InvoiceDialog({ open, onOpenChange, invoice, onSuccess }
   const [loading, setLoading] = useState(false);
   const [loadingItems, setLoadingItems] = useState(false);
   const [formData, setFormData] = useState({
+    invoice_number: '',
     invoice_date: new Date().toISOString().split('T')[0],
     due_date: '',
     customer_name: '',
@@ -50,6 +51,7 @@ export default function InvoiceDialog({ open, onOpenChange, invoice, onSuccess }
     if (open && invoice) {
       // Load existing invoice data
       setFormData({
+        invoice_number: invoice.invoice_number,
         invoice_date: invoice.invoice_date,
         due_date: invoice.due_date || '',
         customer_name: invoice.customer_name,
@@ -64,6 +66,7 @@ export default function InvoiceDialog({ open, onOpenChange, invoice, onSuccess }
     } else if (open) {
       // Reset form for new invoice
       setFormData({
+        invoice_number: '',
         invoice_date: new Date().toISOString().split('T')[0],
         due_date: '',
         customer_name: '',
@@ -246,8 +249,8 @@ export default function InvoiceDialog({ open, onOpenChange, invoice, onSuccess }
 
         toast.success('Invoice updated successfully');
       } else {
-        // Create new invoice
-        const invoiceNumber = await generateInvoiceNumber();
+        // Create new invoice - use provided number or auto-generate
+        const invoiceNumber = formData.invoice_number.trim() || await generateInvoiceNumber();
 
         const { data: newInvoice, error: invoiceError } = await supabase
           .from('invoices')
@@ -367,7 +370,17 @@ export default function InvoiceDialog({ open, onOpenChange, invoice, onSuccess }
           {/* Invoice Details */}
           <div className="space-y-4">
             <h3 className="font-medium">Invoice Details</h3>
-            <div className="grid gap-4 md:grid-cols-3">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="invoice_number">Invoice Number</Label>
+                <Input
+                  id="invoice_number"
+                  value={formData.invoice_number}
+                  onChange={(e) => setFormData({ ...formData, invoice_number: e.target.value })}
+                  placeholder={invoice ? '' : 'Auto-generated if empty'}
+                  disabled={!!invoice}
+                />
+              </div>
               <div className="space-y-2">
                 <Label htmlFor="invoice_type">Invoice Type *</Label>
                 <Select
@@ -384,6 +397,8 @@ export default function InvoiceDialog({ open, onOpenChange, invoice, onSuccess }
                   </SelectContent>
                 </Select>
               </div>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="invoice_date">Invoice Date *</Label>
                 <Input
