@@ -8,9 +8,10 @@ import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { supabase } from '@/integrations/supabase/client';
-import { Loader2, TrendingUp, TrendingDown, Bus, Users, MapPin, Handshake, Building2, CalendarIcon, Filter } from 'lucide-react';
+import { Loader2, TrendingUp, TrendingDown, Bus, Users, MapPin, Handshake, Building2, CalendarIcon, Filter, Download } from 'lucide-react';
 import { format, startOfMonth, endOfMonth } from 'date-fns';
 import { cn } from '@/lib/utils';
+import * as XLSX from 'xlsx';
 
 interface BusProfitability {
   id: string;
@@ -282,6 +283,77 @@ export default function ProfitabilityReport() {
     return `₹${amount.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
   };
 
+  const exportToExcel = () => {
+    const workbook = XLSX.utils.book_new();
+    const periodLabel = `${format(startDate, 'dd MMM yyyy')} - ${format(endDate, 'dd MMM yyyy')}`;
+
+    // Summary sheet
+    const summaryData = [
+      ['PROFITABILITY REPORT'],
+      [`Period: ${periodLabel}`],
+      [''],
+      ['Summary'],
+      ['Total Revenue', totals.revenue],
+      ['Total Expenses', totals.expense],
+      ['Gross Profit', totals.profit],
+      ['Company Profit', totals.companyProfit],
+    ];
+    const summarySheet = XLSX.utils.aoa_to_sheet(summaryData);
+    summarySheet['!cols'] = [{ wch: 20 }, { wch: 15 }];
+    XLSX.utils.book_append_sheet(workbook, summarySheet, 'Summary');
+
+    // Bus Profitability sheet
+    const busHeaders = ['Registration', 'Bus Name', 'Ownership', 'Partner', 'Trips', 'Distance (km)', 'Revenue', 'Expense', 'Fuel Eff. (km/L)', 'Gross Profit', 'Company Share', 'Partner Share'];
+    const busRows = busProfitability.map(bus => [
+      bus.registration_number,
+      bus.bus_name || '',
+      bus.ownership_type,
+      bus.partner_name || '',
+      bus.tripCount,
+      bus.totalDistance,
+      bus.totalRevenue,
+      bus.totalExpense,
+      bus.fuelEfficiency ? bus.fuelEfficiency.toFixed(1) : '',
+      bus.grossProfit,
+      bus.companyProfit,
+      bus.partnerProfit,
+    ]);
+    const busSheet = XLSX.utils.aoa_to_sheet([busHeaders, ...busRows]);
+    busSheet['!cols'] = busHeaders.map(() => ({ wch: 14 }));
+    XLSX.utils.book_append_sheet(workbook, busSheet, 'By Bus');
+
+    // Driver Profitability sheet
+    const driverHeaders = ['Driver Name', 'Trips', 'Distance (km)', 'Revenue', 'Expense', 'Profit'];
+    const driverRows = driverProfitability.map(driver => [
+      driver.full_name,
+      driver.tripCount,
+      driver.totalDistance,
+      driver.totalRevenue,
+      driver.totalExpense,
+      driver.profit,
+    ]);
+    const driverSheet = XLSX.utils.aoa_to_sheet([driverHeaders, ...driverRows]);
+    driverSheet['!cols'] = driverHeaders.map(() => ({ wch: 15 }));
+    XLSX.utils.book_append_sheet(workbook, driverSheet, 'By Driver');
+
+    // Route Profitability sheet
+    const routeHeaders = ['Route Name', 'Trips', 'Revenue', 'Expense', 'Avg Profit/Trip', 'Total Profit'];
+    const routeRows = routeProfitability.map(route => [
+      route.route_name,
+      route.tripCount,
+      route.totalRevenue,
+      route.totalExpense,
+      route.avgProfit,
+      route.profit,
+    ]);
+    const routeSheet = XLSX.utils.aoa_to_sheet([routeHeaders, ...routeRows]);
+    routeSheet['!cols'] = routeHeaders.map(() => ({ wch: 15 }));
+    XLSX.utils.book_append_sheet(workbook, routeSheet, 'By Route');
+
+    const filename = `Profitability_Report_${format(startDate, 'yyyyMMdd')}_${format(endDate, 'yyyyMMdd')}.xlsx`;
+    XLSX.writeFile(workbook, filename);
+  };
+
   const getProfitBadge = (profit: number) => {
     if (profit > 0) {
       return (
@@ -374,6 +446,16 @@ export default function ProfitabilityReport() {
               }}
             >
               This Month
+            </Button>
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={exportToExcel}
+              disabled={loading || busProfitability.length === 0}
+              className="gap-2"
+            >
+              <Download className="h-4 w-4" />
+              Export
             </Button>
           </div>
         </div>
