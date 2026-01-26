@@ -17,6 +17,7 @@ import TripManagement from "@/pages/admin/TripManagement";
 import ExpenseApproval from "@/pages/admin/ExpenseApproval";
 import StockManagement from "@/pages/admin/StockManagement";
 import ProfitabilityReport from "@/pages/admin/ProfitabilityReport";
+import GSTReport from "@/pages/admin/GSTReport";
 import AdminSettings from "@/pages/admin/Settings";
 import RepairOrganizations from "@/pages/admin/RepairOrganizations";
 import RepairRecords from "@/pages/admin/RepairRecords";
@@ -53,6 +54,7 @@ const App = () => (
             <Route path="/admin/invoices" element={<ProtectedRoute requiredRole="admin"><InvoiceManagement /></ProtectedRoute>} />
             <Route path="/admin/stock" element={<ProtectedRoute requiredRole="admin"><StockManagement /></ProtectedRoute>} />
             <Route path="/admin/profitability" element={<ProtectedRoute requiredRole="admin"><ProfitabilityReport /></ProtectedRoute>} />
+            <Route path="/admin/gst-report" element={<ProtectedRoute requiredRole="admin"><GSTReport /></ProtectedRoute>} />
             <Route path="/admin/settings" element={<ProtectedRoute requiredRole="admin"><AdminSettings /></ProtectedRoute>} />
             <Route path="/admin/repair-organizations" element={<ProtectedRoute requiredRole="admin"><RepairOrganizations /></ProtectedRoute>} />
             <Route path="/admin/repair-records" element={<ProtectedRoute requiredRole="admin"><RepairRecords /></ProtectedRoute>} />
