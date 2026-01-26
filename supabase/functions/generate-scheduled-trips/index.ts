@@ -15,6 +15,15 @@ function generateTripNumber(): string {
   return `TRP${dateStr}${random}`;
 }
 
+function parseTimeToMinutes(time: string): number {
+  const [hours, minutes] = time.split(":").map(Number);
+  return hours * 60 + minutes;
+}
+
+function isOvernightJourney(departureTime: string, arrivalTime: string): boolean {
+  return parseTimeToMinutes(arrivalTime) < parseTimeToMinutes(departureTime);
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -29,6 +38,11 @@ serve(async (req) => {
     const today = new Date();
     const todayName = dayNames[today.getDay()];
     const todayDateStr = today.toISOString().split("T")[0];
+    
+    // Get yesterday's date for checking in-progress trips
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayDateStr = yesterday.toISOString().split("T")[0];
 
     console.log(`Generating scheduled trips for ${todayName} (${todayDateStr})`);
 
@@ -56,6 +70,7 @@ serve(async (req) => {
 
     let tripsCreated = 0;
     const errors: string[] = [];
+    const skipped: string[] = [];
 
     for (const schedule of schedules) {
       try {
@@ -72,25 +87,81 @@ serve(async (req) => {
           continue;
         }
 
-        // Calculate departure and arrival dates/times
+        // Determine if this is an overnight journey
         const departureTime = schedule.departure_time;
         const arrivalTime = schedule.arrival_time;
+        const isOvernight = isOvernightJourney(departureTime, arrivalTime);
 
-        // If arrival time is earlier than departure, it's next day arrival
-        const departureParts = departureTime.split(":");
-        const arrivalParts = arrivalTime.split(":");
-        const departureMinutes = parseInt(departureParts[0]) * 60 + parseInt(departureParts[1]);
-        const arrivalMinutes = parseInt(arrivalParts[0]) * 60 + parseInt(arrivalParts[1]);
+        // Check if bus already has an in-progress trip
+        const { data: activeBusTrip } = await supabase
+          .from("trips")
+          .select("id, trip_number, trip_date, arrival_time")
+          .eq("bus_id", schedule.bus_id)
+          .eq("status", "in_progress")
+          .maybeSingle();
 
-        const arrivalDate = new Date(today);
-        if (arrivalMinutes <= departureMinutes) {
-          // Arrival is next day
-          arrivalDate.setDate(arrivalDate.getDate() + 1);
+        if (activeBusTrip) {
+          // For overnight journeys, check if yesterday's trip should be completing today
+          if (isOvernight) {
+            const now = new Date();
+            const currentHour = now.getHours();
+            const currentMinutes = now.getMinutes();
+            const currentTimeMinutes = currentHour * 60 + currentMinutes;
+            const arrivalMinutes = parseTimeToMinutes(arrivalTime);
+            
+            // If current time is before today's expected arrival, skip (bus still en route)
+            if (currentTimeMinutes < arrivalMinutes) {
+              skipped.push(
+                `Schedule ${schedule.id}: Bus ${schedule.buses?.registration_number} ` +
+                `is still en route from yesterday's trip ${activeBusTrip.trip_number} ` +
+                `(expected arrival at ${arrivalTime})`
+              );
+              console.log(`Skipping: Bus ${schedule.buses?.registration_number} still en route`);
+              continue;
+            }
+          } else {
+            // For same-day journeys, skip entirely if bus is busy
+            skipped.push(
+              `Schedule ${schedule.id}: Bus ${schedule.buses?.registration_number} ` +
+              `is already on trip ${activeBusTrip.trip_number}`
+            );
+            console.log(`Skipping: Bus ${schedule.buses?.registration_number} is on active trip`);
+            continue;
+          }
         }
 
-        // Create the main trip
-        const tripNumber = generateTripNumber();
-        
+        // Check if driver already has an in-progress trip
+        if (schedule.driver_id) {
+          const { data: activeDriverTrip } = await supabase
+            .from("trips")
+            .select("id, trip_number")
+            .eq("driver_id", schedule.driver_id)
+            .eq("status", "in_progress")
+            .maybeSingle();
+
+          if (activeDriverTrip) {
+            skipped.push(
+              `Schedule ${schedule.id}: Driver ${schedule.profiles?.full_name} ` +
+              `is already on trip ${activeDriverTrip.trip_number}`
+            );
+            console.log(`Skipping: Driver ${schedule.profiles?.full_name} is on active trip`);
+            continue;
+          }
+        }
+
+        // Find yesterday's trip for this schedule (to link trips)
+        const { data: yesterdayTrip } = await supabase
+          .from("trips")
+          .select("id, trip_number, cycle_position")
+          .eq("schedule_id", schedule.id)
+          .eq("trip_date", yesterdayDateStr)
+          .maybeSingle();
+
+        // Calculate expected arrival date
+        const expectedArrivalDate = isOvernight
+          ? new Date(today.getTime() + 24 * 60 * 60 * 1000).toISOString().split("T")[0]
+          : todayDateStr;
+
         // Create start_date from today + departure time
         const [depHour, depMin] = departureTime.split(":").map(Number);
         const startDate = new Date(today);
@@ -99,6 +170,13 @@ serve(async (req) => {
         // Get bus and driver names for snapshot
         const busName = schedule.buses?.bus_name || schedule.buses?.registration_number || "";
         const driverName = schedule.profiles?.full_name || "";
+
+        // Calculate cycle position
+        const cyclePosition = yesterdayTrip 
+          ? (yesterdayTrip.cycle_position || 1) + 1 
+          : 1;
+        
+        const tripNumber = generateTripNumber();
         
         const tripData: Record<string, unknown> = {
           trip_number: tripNumber,
@@ -114,6 +192,9 @@ serve(async (req) => {
           trip_type: schedule.is_two_way ? "two_way" : "one_way",
           bus_name_snapshot: busName,
           driver_name_snapshot: driverName,
+          expected_arrival_date: expectedArrivalDate,
+          previous_trip_id: yesterdayTrip?.id || null,
+          cycle_position: cyclePosition,
         };
 
         // Add return journey details if two-way
@@ -122,17 +203,27 @@ serve(async (req) => {
           tripData.return_arrival_time = schedule.return_arrival_time;
         }
 
-        const { error: insertError } = await supabase
+        const { data: newTrip, error: insertError } = await supabase
           .from("trips")
-          .insert(tripData);
+          .insert(tripData)
+          .select("id")
+          .single();
 
         if (insertError) {
           errors.push(`Failed to create trip for schedule ${schedule.id}: ${insertError.message}`);
           continue;
         }
 
+        // Update yesterday's trip with next_trip_id if it exists
+        if (yesterdayTrip && newTrip) {
+          await supabase
+            .from("trips")
+            .update({ next_trip_id: newTrip.id })
+            .eq("id", yesterdayTrip.id);
+        }
+
         tripsCreated++;
-        console.log(`Created trip ${tripNumber} for schedule ${schedule.id}`);
+        console.log(`Created trip ${tripNumber} for schedule ${schedule.id}${isOvernight ? ' (overnight)' : ''}`);
 
         // Create notification for driver if assigned
         if (schedule.driver_id) {
@@ -150,6 +241,9 @@ serve(async (req) => {
     }
 
     console.log(`Generated ${tripsCreated} trips from ${schedules.length} schedules`);
+    if (skipped.length > 0) {
+      console.log(`Skipped ${skipped.length} schedules due to active trips`);
+    }
 
     return new Response(
       JSON.stringify({
@@ -158,6 +252,7 @@ serve(async (req) => {
         day: todayName,
         schedulesProcessed: schedules.length,
         tripsCreated,
+        skipped: skipped.length > 0 ? skipped : undefined,
         errors: errors.length > 0 ? errors : undefined,
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
