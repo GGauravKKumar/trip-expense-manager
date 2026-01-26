@@ -460,6 +460,7 @@ export default function DriverManagement() {
                           value={newDriver.phone}
                           onChange={(e) => setNewDriver({ ...newDriver, phone: e.target.value })}
                           placeholder="+91 98765 43210"
+                          maxLength={15}
                         />
                       </div>
                       <div className="grid grid-cols-2 gap-4">
@@ -661,6 +662,7 @@ export default function DriverManagement() {
                     type="tel"
                     value={editingDriver.phone || ''}
                     onChange={(e) => setEditingDriver({ ...editingDriver, phone: e.target.value })}
+                    maxLength={15}
                   />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
