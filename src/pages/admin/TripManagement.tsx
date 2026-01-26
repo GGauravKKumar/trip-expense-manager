@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -21,6 +21,8 @@ import PeriodExportDialog from '@/components/PeriodExportDialog';
 import TripChainIndicator from '@/components/TripChainIndicator';
 import { useTableFilters } from '@/hooks/useTableFilters';
 import { SearchFilterBar, TablePagination } from '@/components/TableFilters';
+import DateRangeFilter, { DatePreset, getDefaultWeekRange } from '@/components/DateRangeFilter';
+import { subDays } from 'date-fns';
 
 export default function TripManagement() {
   const [trips, setTrips] = useState<Trip[]>([]);
@@ -50,6 +52,24 @@ export default function TripManagement() {
   const [revenueTrip, setRevenueTrip] = useState<Trip | null>(null);
   const [periodDialogOpen, setPeriodDialogOpen] = useState(false);
 
+  // Date filter state - default to weekly
+  const defaultRange = getDefaultWeekRange();
+  const [datePreset, setDatePreset] = useState<DatePreset>('week');
+  const [startDate, setStartDate] = useState<Date | undefined>(defaultRange.start);
+  const [endDate, setEndDate] = useState<Date | undefined>(defaultRange.end);
+
+  // Filter trips by date range
+  const dateFilteredTrips = useMemo(() => {
+    if (!startDate && !endDate) return trips;
+    
+    return trips.filter((trip) => {
+      const tripDate = new Date(trip.start_date);
+      if (startDate && tripDate < new Date(startDate.setHours(0, 0, 0, 0))) return false;
+      if (endDate && tripDate > new Date(endDate.setHours(23, 59, 59, 999))) return false;
+      return true;
+    });
+  }, [trips, startDate, endDate]);
+
   // Table filters
   const {
     searchQuery,
@@ -66,7 +86,7 @@ export default function TripManagement() {
     showingTo,
     totalCount,
   } = useTableFilters({
-    data: trips,
+    data: dateFilteredTrips,
     searchFields: [
       'trip_number',
       (trip) => (trip.bus as any)?.registration_number,
@@ -505,31 +525,42 @@ export default function TripManagement() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold">Trip Management</h1>
             <p className="text-muted-foreground">Schedule and manage trips</p>
           </div>
-          <div className="flex gap-2 flex-wrap">
-            <Button variant="outline" onClick={() => setPeriodDialogOpen(true)}>
-              <Calendar className="h-4 w-4 mr-2" />
-              Fleet Report
-            </Button>
-            <Button variant="outline" onClick={handleExportTripSheet} disabled={trips.length === 0}>
-              <FileSpreadsheet className="h-4 w-4 mr-2" />
-              Trip Sheet
-            </Button>
-            <Button variant="outline" onClick={handleExportTrips} disabled={trips.length === 0}>
-              <Download className="h-4 w-4 mr-2" />
-              Export
-            </Button>
-            <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-              <DialogTrigger asChild>
-                <Button onClick={handleAddNew}>
-                  <Plus className="h-4 w-4 mr-2" />
-                  Create Trip
-                </Button>
-              </DialogTrigger>
+          <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
+            <DateRangeFilter
+              startDate={startDate}
+              endDate={endDate}
+              onDateChange={(start, end) => {
+                setStartDate(start);
+                setEndDate(end);
+              }}
+              preset={datePreset}
+              onPresetChange={setDatePreset}
+            />
+            <div className="flex gap-2 flex-wrap">
+              <Button variant="outline" onClick={() => setPeriodDialogOpen(true)}>
+                <Calendar className="h-4 w-4 mr-2" />
+                Fleet Report
+              </Button>
+              <Button variant="outline" onClick={handleExportTripSheet} disabled={trips.length === 0}>
+                <FileSpreadsheet className="h-4 w-4 mr-2" />
+                Trip Sheet
+              </Button>
+              <Button variant="outline" onClick={handleExportTrips} disabled={trips.length === 0}>
+                <Download className="h-4 w-4 mr-2" />
+                Export
+              </Button>
+              <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button onClick={handleAddNew}>
+                    <Plus className="h-4 w-4 mr-2" />
+                    Create Trip
+                  </Button>
+                </DialogTrigger>
             <DialogContent className="max-w-lg">
               <DialogHeader>
                 <DialogTitle>{editingTrip ? 'Edit Trip' : 'Create New Trip'}</DialogTitle>
@@ -702,7 +733,8 @@ export default function TripManagement() {
                 </div>
               </form>
             </DialogContent>
-          </Dialog>
+            </Dialog>
+            </div>
           </div>
         </div>
 
