@@ -99,6 +99,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "bus_schedules_bus_id_fkey"
+            columns: ["bus_id"]
+            isOneToOne: false
+            referencedRelation: "buses_driver_view"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "bus_schedules_driver_id_fkey"
             columns: ["driver_id"]
             isOneToOne: false
@@ -163,6 +170,13 @@ export type Database = {
             columns: ["bus_id"]
             isOneToOne: false
             referencedRelation: "buses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bus_tax_records_bus_id_fkey"
+            columns: ["bus_id"]
+            isOneToOne: false
+            referencedRelation: "buses_driver_view"
             referencedColumns: ["id"]
           },
         ]
@@ -558,6 +572,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "invoices_bus_id_fkey"
+            columns: ["bus_id"]
+            isOneToOne: false
+            referencedRelation: "buses_driver_view"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "invoices_trip_id_fkey"
             columns: ["trip_id"]
             isOneToOne: false
@@ -767,6 +788,13 @@ export type Database = {
             columns: ["bus_id"]
             isOneToOne: false
             referencedRelation: "buses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "repair_records_bus_id_fkey"
+            columns: ["bus_id"]
+            isOneToOne: false
+            referencedRelation: "buses_driver_view"
             referencedColumns: ["id"]
           },
           {
@@ -1072,6 +1100,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "trips_bus_id_fkey"
+            columns: ["bus_id"]
+            isOneToOne: false
+            referencedRelation: "buses_driver_view"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "trips_driver_id_fkey"
             columns: ["driver_id"]
             isOneToOne: false
@@ -1117,7 +1152,59 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      buses_driver_view: {
+        Row: {
+          bus_name: string | null
+          bus_type: string | null
+          capacity: number | null
+          created_at: string | null
+          fitness_expiry: string | null
+          home_state_id: string | null
+          id: string | null
+          insurance_expiry: string | null
+          puc_expiry: string | null
+          registration_number: string | null
+          status: Database["public"]["Enums"]["bus_status"] | null
+          updated_at: string | null
+        }
+        Insert: {
+          bus_name?: string | null
+          bus_type?: string | null
+          capacity?: number | null
+          created_at?: string | null
+          fitness_expiry?: string | null
+          home_state_id?: string | null
+          id?: string | null
+          insurance_expiry?: string | null
+          puc_expiry?: string | null
+          registration_number?: string | null
+          status?: Database["public"]["Enums"]["bus_status"] | null
+          updated_at?: string | null
+        }
+        Update: {
+          bus_name?: string | null
+          bus_type?: string | null
+          capacity?: number | null
+          created_at?: string | null
+          fitness_expiry?: string | null
+          home_state_id?: string | null
+          id?: string | null
+          insurance_expiry?: string | null
+          puc_expiry?: string | null
+          registration_number?: string | null
+          status?: Database["public"]["Enums"]["bus_status"] | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "buses_home_state_id_fkey"
+            columns: ["home_state_id"]
+            isOneToOne: false
+            referencedRelation: "indian_states"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Functions: {
       get_profile_id: { Args: { _user_id: string }; Returns: string }
