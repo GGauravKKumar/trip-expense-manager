@@ -1,4 +1,4 @@
-# Fleet Manager - Complete Offline Setup
+# BusManager - Complete Offline Setup
 # Run with: docker compose up -d
 
 version: "3.8"
@@ -7,7 +7,7 @@ services:
   # PostgreSQL Database
   db:
     image: postgres:15-alpine
-    container_name: fleet-db
+    container_name: busmanager-db
     restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
@@ -27,7 +27,7 @@ services:
   # Supabase Auth (GoTrue)
   auth:
     image: supabase/gotrue:v2.143.0
-    container_name: fleet-auth
+    container_name: busmanager-auth
     restart: unless-stopped
     depends_on:
       db:
@@ -51,14 +51,14 @@ services:
       GOTRUE_SMTP_ADMIN_EMAIL: admin@localhost
       GOTRUE_SMTP_HOST: ""
       GOTRUE_SMTP_PORT: ""
-      GOTRUE_SMTP_SENDER_NAME: Fleet Manager
+      GOTRUE_SMTP_SENDER_NAME: BusManager
     ports:
       - "9999:9999"
 
   # Supabase REST API (PostgREST)
   rest:
     image: postgrest/postgrest:v12.0.2
-    container_name: fleet-rest
+    container_name: busmanager-rest
     restart: unless-stopped
     depends_on:
       db:
@@ -75,7 +75,7 @@ services:
   # Supabase Realtime
   realtime:
     image: supabase/realtime:v2.25.50
-    container_name: fleet-realtime
+    container_name: busmanager-realtime
     restart: unless-stopped
     depends_on:
       db:
@@ -102,7 +102,7 @@ services:
   # Supabase Storage
   storage:
     image: supabase/storage-api:v0.43.11
-    container_name: fleet-storage
+    container_name: busmanager-storage
     restart: unless-stopped
     depends_on:
       db:
@@ -127,7 +127,7 @@ services:
   # Kong API Gateway
   kong:
     image: kong:2.8.1
-    container_name: fleet-kong
+    container_name: busmanager-kong
     restart: unless-stopped
     depends_on:
       - auth
@@ -150,15 +150,15 @@ services:
   # Supabase Studio (Dashboard)
   studio:
     image: supabase/studio:20240101-ce42139
-    container_name: fleet-studio
+    container_name: busmanager-studio
     restart: unless-stopped
     depends_on:
       - kong
     environment:
       STUDIO_PG_META_URL: http://meta:8080
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-your-super-secret-password}
-      DEFAULT_ORGANIZATION_NAME: Fleet Manager
-      DEFAULT_PROJECT_NAME: Fleet Manager
+      DEFAULT_ORGANIZATION_NAME: BusManager
+      DEFAULT_PROJECT_NAME: BusManager
       SUPABASE_URL: http://kong:8000
       SUPABASE_PUBLIC_URL: ${API_EXTERNAL_URL:-http://localhost:8000}
       SUPABASE_ANON_KEY: ${ANON_KEY:-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1sb2NhbCIsInJvbGUiOiJhbm9uIiwiaWF0IjoxNjQ1MTkyODI0LCJleHAiOjE5NjA3Njg4MjR9.M5W6bBHF6e8hDSqwrO2hJGcOjYt7EEPsqoANnxh8mys}
@@ -169,7 +169,7 @@ services:
   # PostgreSQL Meta (for Studio)
   meta:
     image: supabase/postgres-meta:v0.75.0
-    container_name: fleet-meta
+    container_name: busmanager-meta
     restart: unless-stopped
     depends_on:
       db:
@@ -182,12 +182,12 @@ services:
       PG_META_DB_USER: postgres
       PG_META_DB_PASSWORD: ${POSTGRES_PASSWORD:-your-super-secret-password}
 
-  # Fleet Manager Frontend
+  # BusManager Frontend
   frontend:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: fleet-frontend
+    container_name: busmanager-frontend
     restart: unless-stopped
     depends_on:
       - kong
