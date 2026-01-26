@@ -1,4 +1,4 @@
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 
 interface BusTripData {
   vehicleNo: string;
@@ -33,50 +33,54 @@ interface TripRowData {
   netIncome: number;
 }
 
-export function exportPeriodTripSheet(
+export async function exportPeriodTripSheet(
   busData: BusTripData[],
   periodLabel: string,
   filename: string
 ) {
-  const workbook = XLSX.utils.book_new();
+  const workbook = new ExcelJS.Workbook();
 
   busData.forEach((bus) => {
+    // Use bus registration as sheet name (truncate to 31 chars max for Excel)
+    const sheetName = bus.vehicleNo.substring(0, 31);
+    const worksheet = workbook.addWorksheet(sheetName);
+
     // Header rows
-    const headerRows = [
-      ['BUS TRIP SHEET', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', ''],
-      [`Vehicle No: ${bus.vehicleNo}`, '', '', `Period: ${periodLabel}`, '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', ''],
-      ['', 'Hours', '', 'Journey', '', 'Odometer Reading', '', '', '', '', '', 'Revenue from operation', '', '', '', '', '', 'Expenses in operation', '', '', '', '', '', '', ''],
-      ['Date', 'Out', 'Returned', 'From', 'To', 'Start', 'Finished', 'Dist KM', 'Reason for trip', 'Driver', 'Direction', 'Cash', 'Online', 'Paytm', 'Others', 'Agent', 'G.Total', 'Diesel', 'Driver', 'Route Exp.', 'Maintenance', 'Govt. duty', 'Others', 'Total Exp.', 'N.Income'],
-    ];
+    worksheet.addRow(['BUS TRIP SHEET']);
+    worksheet.addRow([`Vehicle No: ${bus.vehicleNo}`, '', '', `Period: ${periodLabel}`]);
+    worksheet.addRow(['', 'Hours', '', 'Journey', '', 'Odometer Reading', '', '', '', '', '', 'Revenue from operation', '', '', '', '', '', 'Expenses in operation']);
+    worksheet.addRow(['Date', 'Out', 'Returned', 'From', 'To', 'Start', 'Finished', 'Dist KM', 'Reason for trip', 'Driver', 'Direction', 'Cash', 'Online', 'Paytm', 'Others', 'Agent', 'G.Total', 'Diesel', 'Driver', 'Route Exp.', 'Maintenance', 'Govt. duty', 'Others', 'Total Exp.', 'N.Income']);
 
     // Data rows
-    const dataRows = bus.trips.map((trip) => [
-      trip.date,
-      trip.hoursOut,
-      trip.hoursReturned,
-      trip.from,
-      trip.to,
-      trip.odometerStart || '',
-      trip.odometerFinished || '',
-      trip.distanceKm || 0,
-      trip.reasonForTrip || '',
-      trip.driverName || '',
-      trip.direction || '',
-      trip.revenueCash || 0,
-      trip.revenueOnline || 0,
-      trip.revenuePaytm || 0,
-      trip.revenueOthers || 0,
-      trip.revenueAgent || 0,
-      trip.revenueTotal || 0,
-      trip.expenseDiesel || 0,
-      trip.expenseDriver || 0,
-      trip.expenseRoute || 0,
-      trip.expenseMaintenance || 0,
-      trip.expenseGovtDuty || 0,
-      trip.expenseOthers || 0,
-      trip.expenseTotal || 0,
-      trip.netIncome || 0,
-    ]);
+    bus.trips.forEach((trip) => {
+      worksheet.addRow([
+        trip.date,
+        trip.hoursOut,
+        trip.hoursReturned,
+        trip.from,
+        trip.to,
+        trip.odometerStart || '',
+        trip.odometerFinished || '',
+        trip.distanceKm || 0,
+        trip.reasonForTrip || '',
+        trip.driverName || '',
+        trip.direction || '',
+        trip.revenueCash || 0,
+        trip.revenueOnline || 0,
+        trip.revenuePaytm || 0,
+        trip.revenueOthers || 0,
+        trip.revenueAgent || 0,
+        trip.revenueTotal || 0,
+        trip.expenseDiesel || 0,
+        trip.expenseDriver || 0,
+        trip.expenseRoute || 0,
+        trip.expenseMaintenance || 0,
+        trip.expenseGovtDuty || 0,
+        trip.expenseOthers || 0,
+        trip.expenseTotal || 0,
+        trip.netIncome || 0,
+      ]);
+    });
 
     // Totals
     const totals = bus.trips.reduce(
@@ -116,7 +120,7 @@ export function exportPeriodTripSheet(
       }
     );
 
-    dataRows.push([
+    worksheet.addRow([
       'TOTAL',
       '',
       '',
@@ -144,38 +148,30 @@ export function exportPeriodTripSheet(
       totals.netIncome,
     ]);
 
-    const allRows = [...headerRows, ...dataRows];
-    const worksheet = XLSX.utils.aoa_to_sheet(allRows);
-
-    worksheet['!cols'] = [
-      { wch: 12 }, { wch: 10 }, { wch: 10 }, { wch: 15 }, { wch: 15 },
-      { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 15 }, { wch: 15 },
-      { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 },
-      { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 },
-      { wch: 12 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 },
+    // Set column widths
+    worksheet.columns = [
+      { width: 12 }, { width: 10 }, { width: 10 }, { width: 15 }, { width: 15 },
+      { width: 8 }, { width: 8 }, { width: 8 }, { width: 15 }, { width: 15 },
+      { width: 10 }, { width: 10 }, { width: 10 }, { width: 10 }, { width: 10 },
+      { width: 10 }, { width: 10 }, { width: 10 }, { width: 10 }, { width: 10 },
+      { width: 12 }, { width: 10 }, { width: 10 }, { width: 10 }, { width: 10 },
     ];
 
-    worksheet['!merges'] = [
-      { s: { r: 0, c: 0 }, e: { r: 0, c: 24 } },
-      { s: { r: 2, c: 1 }, e: { r: 2, c: 2 } },
-      { s: { r: 2, c: 3 }, e: { r: 2, c: 4 } },
-      { s: { r: 2, c: 5 }, e: { r: 2, c: 6 } },
-      { s: { r: 2, c: 11 }, e: { r: 2, c: 16 } }, // Revenue including Agent
-      { s: { r: 2, c: 17 }, e: { r: 2, c: 23 } }, // Expenses
-    ];
-
-    // Use bus registration as sheet name (truncate to 31 chars max for Excel)
-    const sheetName = bus.vehicleNo.substring(0, 31);
-    XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
+    // Merge cells for headers
+    worksheet.mergeCells('A1:Y1');
+    worksheet.mergeCells('B3:C3');
+    worksheet.mergeCells('D3:E3');
+    worksheet.mergeCells('F3:G3');
+    worksheet.mergeCells('L3:Q3');
+    worksheet.mergeCells('R3:X3');
   });
 
   // Add summary sheet
-  const summaryRows: (string | number)[][] = [
-    ['FLEET SUMMARY', '', '', '', '', ''],
-    [`Period: ${periodLabel}`, '', '', '', '', ''],
-    ['', '', '', '', '', ''],
-    ['Vehicle', 'Total Trips', 'Total Distance (km)', 'Total Revenue', 'Total Expenses', 'Net Income'],
-  ];
+  const summarySheet = workbook.addWorksheet('Summary');
+  summarySheet.addRow(['FLEET SUMMARY']);
+  summarySheet.addRow([`Period: ${periodLabel}`]);
+  summarySheet.addRow([]);
+  summarySheet.addRow(['Vehicle', 'Total Trips', 'Total Distance (km)', 'Total Revenue', 'Total Expenses', 'Net Income']);
 
   let fleetTotals = { trips: 0, distance: 0, revenue: 0, expense: 0, net: 0 };
 
@@ -190,7 +186,7 @@ export function exportPeriodTripSheet(
       { distance: 0, revenue: 0, expense: 0, net: 0 }
     );
 
-    summaryRows.push([
+    summarySheet.addRow([
       bus.vehicleNo,
       bus.trips.length,
       busTotal.distance,
@@ -206,7 +202,7 @@ export function exportPeriodTripSheet(
     fleetTotals.net += busTotal.net;
   });
 
-  summaryRows.push([
+  summarySheet.addRow([
     'FLEET TOTAL',
     fleetTotals.trips,
     fleetTotals.distance,
@@ -215,15 +211,20 @@ export function exportPeriodTripSheet(
     fleetTotals.net,
   ]);
 
-  const summarySheet = XLSX.utils.aoa_to_sheet(summaryRows);
-  summarySheet['!cols'] = [
-    { wch: 20 }, { wch: 12 }, { wch: 18 }, { wch: 15 }, { wch: 15 }, { wch: 12 },
+  summarySheet.columns = [
+    { width: 20 }, { width: 12 }, { width: 18 }, { width: 15 }, { width: 15 }, { width: 12 },
   ];
-  summarySheet['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 5 } }];
+  summarySheet.mergeCells('A1:F1');
 
-  XLSX.utils.book_append_sheet(workbook, summarySheet, 'Summary');
-
-  XLSX.writeFile(workbook, `${filename}.xlsx`);
+  // Generate and download file
+  const buffer = await workbook.xlsx.writeBuffer();
+  const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `${filename}.xlsx`;
+  link.click();
+  URL.revokeObjectURL(url);
 }
 
 // Returns an array of trip rows (for two-way trips, returns 2 rows)

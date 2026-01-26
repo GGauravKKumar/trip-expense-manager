@@ -80,10 +80,10 @@ export default function RouteExpensesDialog({
     setLoading(false);
   }
 
-  function handleExport() {
+  async function handleExport() {
     if (expenses.length === 0) return;
 
-    exportToExcel(
+    await exportToExcel(
       expenses,
       [
         { header: 'Trip #', key: 'trip', format: (v) => v?.trip_number || '-' },

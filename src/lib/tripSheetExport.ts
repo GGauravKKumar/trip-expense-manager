@@ -1,4 +1,4 @@
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 
 interface TripSheetData {
   vehicleNo: string;
@@ -32,50 +32,50 @@ interface TripSheetData {
   netIncome: number;
 }
 
-export function exportTripSheet(trips: TripSheetData[], vehicleNo: string, filename: string) {
-  // Create workbook
-  const workbook = XLSX.utils.book_new();
+export async function exportTripSheet(trips: TripSheetData[], vehicleNo: string, filename: string) {
+  const workbook = new ExcelJS.Workbook();
+  const worksheet = workbook.addWorksheet('Trip Sheet');
   
   // Create header rows
-  const headerRows = [
-    ['BUS TRIP SHEET', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', ''],
-    ['Vehicle No', vehicleNo, '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', ''],
-    ['', 'Hours', '', 'Journey', '', 'Odometer Reading', '', '', '', '', '', 'Revenue from operation', '', '', '', '', '', 'Expenses in operation', '', '', '', '', '', '', ''],
-    ['Date', 'Out', 'Returned', 'From', 'To', 'Start', 'Finished', 'Dist KM', 'Reason for trip', 'Driver Sign', 'Direction', 'Cash', 'Online', 'Paytm', 'Others', 'Agent', 'G.Total', 'Diesel', 'Driver', 'Route Exp.', 'Maintenance', 'Govt. duty', 'Others', 'Total Exp.', 'N.Income'],
-  ];
+  worksheet.addRow(['BUS TRIP SHEET']);
+  worksheet.addRow(['Vehicle No', vehicleNo]);
+  worksheet.addRow(['', 'Hours', '', 'Journey', '', 'Odometer Reading', '', '', '', '', '', 'Revenue from operation', '', '', '', '', '', 'Expenses in operation']);
+  worksheet.addRow(['Date', 'Out', 'Returned', 'From', 'To', 'Start', 'Finished', 'Dist KM', 'Reason for trip', 'Driver Sign', 'Direction', 'Cash', 'Online', 'Paytm', 'Others', 'Agent', 'G.Total', 'Diesel', 'Driver', 'Route Exp.', 'Maintenance', 'Govt. duty', 'Others', 'Total Exp.', 'N.Income']);
 
   // Create data rows
-  const dataRows = trips.map(trip => [
-    trip.date,
-    trip.hoursOut,
-    trip.hoursReturned,
-    trip.from,
-    trip.to,
-    trip.odometerStart || 0,
-    trip.odometerFinished || 0,
-    trip.distanceKm || 0,
-    trip.reasonForTrip || '',
-    trip.driverSign || '',
-    trip.journeyDirection === 'return' ? '↩ Return' : '→ Outward',
-    trip.revenueCash || 0,
-    trip.revenueOnline || 0,
-    trip.revenuePaytm || 0,
-    trip.revenueOthers || 0,
-    trip.revenueAgent || 0,
-    trip.revenueTotal || 0,
-    trip.expenseDiesel || 0,
-    trip.expenseDriver || 0,
-    trip.expenseRoute || 0,
-    trip.expenseMaintenance || 0,
-    trip.expenseGovtDuty || 0,
-    trip.expenseOthers || 0,
-    trip.expenseTotal || 0,
-    trip.netIncome || 0,
-  ]);
+  trips.forEach(trip => {
+    worksheet.addRow([
+      trip.date,
+      trip.hoursOut,
+      trip.hoursReturned,
+      trip.from,
+      trip.to,
+      trip.odometerStart || 0,
+      trip.odometerFinished || 0,
+      trip.distanceKm || 0,
+      trip.reasonForTrip || '',
+      trip.driverSign || '',
+      trip.journeyDirection === 'return' ? '↩ Return' : '→ Outward',
+      trip.revenueCash || 0,
+      trip.revenueOnline || 0,
+      trip.revenuePaytm || 0,
+      trip.revenueOthers || 0,
+      trip.revenueAgent || 0,
+      trip.revenueTotal || 0,
+      trip.expenseDiesel || 0,
+      trip.expenseDriver || 0,
+      trip.expenseRoute || 0,
+      trip.expenseMaintenance || 0,
+      trip.expenseGovtDuty || 0,
+      trip.expenseOthers || 0,
+      trip.expenseTotal || 0,
+      trip.netIncome || 0,
+    ]);
+  });
 
   // Add empty rows to match template
-  while (dataRows.length < 10) {
-    dataRows.push(['', '', '', '', '', '', '', 0, '', '', '', '', '', '', '', '', 0, '', '', '', '', '', '', 0, 0]);
+  while (worksheet.rowCount < 14) {
+    worksheet.addRow(['', '', '', '', '', '', '', 0, '', '', '', '', '', '', '', '', 0, '', '', '', '', '', '', 0, 0]);
   }
 
   // Calculate totals
@@ -114,59 +114,58 @@ export function exportTripSheet(trips: TripSheetData[], vehicleNo: string, filen
   });
 
   // Add totals row
-  dataRows.push([
+  worksheet.addRow([
     'TOTAL', '', '', '', '', '', '', totals.distanceKm, '', '', '',
     totals.revenueCash, totals.revenueOnline, totals.revenuePaytm, totals.revenueOthers, totals.revenueAgent, totals.revenueTotal,
     totals.expenseDiesel, totals.expenseDriver, totals.expenseRoute, totals.expenseMaintenance, totals.expenseGovtDuty, totals.expenseOthers, totals.expenseTotal, totals.netIncome
   ]);
 
-  // Combine all rows
-  const allRows = [...headerRows, ...dataRows];
-  
-  // Create worksheet
-  const worksheet = XLSX.utils.aoa_to_sheet(allRows);
-
   // Set column widths
-  worksheet['!cols'] = [
-    { wch: 12 }, // Date
-    { wch: 10 }, // Out
-    { wch: 10 }, // Returned
-    { wch: 15 }, // From
-    { wch: 15 }, // To
-    { wch: 8 },  // Start
-    { wch: 8 },  // Finished
-    { wch: 8 },  // Dist KM
-    { wch: 15 }, // Reason
-    { wch: 12 }, // Driver Sign
-    { wch: 10 }, // Direction
-    { wch: 10 }, // Cash
-    { wch: 10 }, // Online
-    { wch: 10 }, // Paytm
-    { wch: 10 }, // Others
-    { wch: 10 }, // Agent
-    { wch: 10 }, // G.Total
-    { wch: 10 }, // Diesel
-    { wch: 10 }, // Driver
-    { wch: 10 }, // Route Exp
-    { wch: 12 }, // Maintenance
-    { wch: 10 }, // Govt duty
-    { wch: 10 }, // Others
-    { wch: 10 }, // Total Exp
-    { wch: 10 }, // N.Income
+  worksheet.columns = [
+    { width: 12 }, // Date
+    { width: 10 }, // Out
+    { width: 10 }, // Returned
+    { width: 15 }, // From
+    { width: 15 }, // To
+    { width: 8 },  // Start
+    { width: 8 },  // Finished
+    { width: 8 },  // Dist KM
+    { width: 15 }, // Reason
+    { width: 12 }, // Driver Sign
+    { width: 10 }, // Direction
+    { width: 10 }, // Cash
+    { width: 10 }, // Online
+    { width: 10 }, // Paytm
+    { width: 10 }, // Others
+    { width: 10 }, // Agent
+    { width: 10 }, // G.Total
+    { width: 10 }, // Diesel
+    { width: 10 }, // Driver
+    { width: 10 }, // Route Exp
+    { width: 12 }, // Maintenance
+    { width: 10 }, // Govt duty
+    { width: 10 }, // Others
+    { width: 10 }, // Total Exp
+    { width: 10 }, // N.Income
   ];
 
   // Merge cells for headers
-  worksheet['!merges'] = [
-    { s: { r: 0, c: 0 }, e: { r: 0, c: 24 } }, // BUS TRIP SHEET
-    { s: { r: 2, c: 1 }, e: { r: 2, c: 2 } },  // Hours
-    { s: { r: 2, c: 3 }, e: { r: 2, c: 4 } },  // Journey
-    { s: { r: 2, c: 5 }, e: { r: 2, c: 6 } },  // Odometer Reading
-    { s: { r: 2, c: 11 }, e: { r: 2, c: 16 } }, // Revenue from operation (includes Agent now)
-    { s: { r: 2, c: 17 }, e: { r: 2, c: 23 } }, // Expenses in operation
-  ];
+  worksheet.mergeCells('A1:Y1');
+  worksheet.mergeCells('B3:C3');
+  worksheet.mergeCells('D3:E3');
+  worksheet.mergeCells('F3:G3');
+  worksheet.mergeCells('L3:Q3');
+  worksheet.mergeCells('R3:X3');
 
-  XLSX.utils.book_append_sheet(workbook, worksheet, 'Trip Sheet');
-  XLSX.writeFile(workbook, `${filename}.xlsx`);
+  // Generate and download file
+  const buffer = await workbook.xlsx.writeBuffer();
+  const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `${filename}.xlsx`;
+  link.click();
+  URL.revokeObjectURL(url);
 }
 
 // Helper to convert trip data from database format to sheet format

@@ -1,4 +1,4 @@
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 
 interface ExportColumn {
   header: string;
@@ -6,39 +6,48 @@ interface ExportColumn {
   format?: (value: any) => string | number;
 }
 
-export function exportToExcel<T extends Record<string, any>>(
+export async function exportToExcel<T extends Record<string, any>>(
   data: T[],
   columns: ExportColumn[],
   filename: string
 ) {
-  const worksheetData = [
-    columns.map(col => col.header),
-    ...data.map(row =>
+  const workbook = new ExcelJS.Workbook();
+  const worksheet = workbook.addWorksheet('Report');
+
+  // Add headers
+  worksheet.addRow(columns.map(col => col.header));
+
+  // Add data rows
+  data.forEach(row => {
+    worksheet.addRow(
       columns.map(col => {
         const value = row[col.key];
         return col.format ? col.format(value) : value ?? '';
       })
-    ),
-  ];
+    );
+  });
 
-  const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
-  
   // Auto-size columns
-  const colWidths = columns.map((col, i) => {
+  worksheet.columns.forEach((column, i) => {
     const maxLength = Math.max(
-      col.header.length,
+      columns[i].header.length,
       ...data.map(row => {
-        const val = col.format ? col.format(row[col.key]) : row[col.key];
+        const val = columns[i].format ? columns[i].format(row[columns[i].key]) : row[columns[i].key];
         return String(val ?? '').length;
       })
     );
-    return { wch: Math.min(maxLength + 2, 50) };
+    column.width = Math.min(maxLength + 2, 50);
   });
-  worksheet['!cols'] = colWidths;
 
-  const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, 'Report');
-  XLSX.writeFile(workbook, `${filename}.xlsx`);
+  // Generate and download file
+  const buffer = await workbook.xlsx.writeBuffer();
+  const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `${filename}.xlsx`;
+  link.click();
+  URL.revokeObjectURL(url);
 }
 
 export function formatCurrency(value: number | null | undefined): string {

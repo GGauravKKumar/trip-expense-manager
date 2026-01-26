@@ -11,7 +11,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { Loader2, TrendingUp, TrendingDown, Bus, Users, MapPin, Handshake, Building2, CalendarIcon, Filter, Download } from 'lucide-react';
 import { format, startOfMonth, endOfMonth } from 'date-fns';
 import { cn } from '@/lib/utils';
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 
 interface BusProfitability {
   id: string;
@@ -283,75 +283,85 @@ export default function ProfitabilityReport() {
     return `₹${amount.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
   };
 
-  const exportToExcel = () => {
-    const workbook = XLSX.utils.book_new();
+  const exportToExcel = async () => {
+    const workbook = new ExcelJS.Workbook();
     const periodLabel = `${format(startDate, 'dd MMM yyyy')} - ${format(endDate, 'dd MMM yyyy')}`;
 
     // Summary sheet
-    const summaryData = [
-      ['PROFITABILITY REPORT'],
-      [`Period: ${periodLabel}`],
-      [''],
-      ['Summary'],
-      ['Total Revenue', totals.revenue],
-      ['Total Expenses', totals.expense],
-      ['Gross Profit', totals.profit],
-      ['Company Profit', totals.companyProfit],
-    ];
-    const summarySheet = XLSX.utils.aoa_to_sheet(summaryData);
-    summarySheet['!cols'] = [{ wch: 20 }, { wch: 15 }];
-    XLSX.utils.book_append_sheet(workbook, summarySheet, 'Summary');
+    const summarySheet = workbook.addWorksheet('Summary');
+    summarySheet.addRow(['PROFITABILITY REPORT']);
+    summarySheet.addRow([`Period: ${periodLabel}`]);
+    summarySheet.addRow([]);
+    summarySheet.addRow(['Summary']);
+    summarySheet.addRow(['Total Revenue', totals.revenue]);
+    summarySheet.addRow(['Total Expenses', totals.expense]);
+    summarySheet.addRow(['Gross Profit', totals.profit]);
+    summarySheet.addRow(['Company Profit', totals.companyProfit]);
+    summarySheet.columns = [{ width: 20 }, { width: 15 }];
 
     // Bus Profitability sheet
+    const busSheet = workbook.addWorksheet('By Bus');
     const busHeaders = ['Registration', 'Bus Name', 'Ownership', 'Partner', 'Trips', 'Distance (km)', 'Revenue', 'Expense', 'Fuel Eff. (km/L)', 'Gross Profit', 'Company Share', 'Partner Share'];
-    const busRows = busProfitability.map(bus => [
-      bus.registration_number,
-      bus.bus_name || '',
-      bus.ownership_type,
-      bus.partner_name || '',
-      bus.tripCount,
-      bus.totalDistance,
-      bus.totalRevenue,
-      bus.totalExpense,
-      bus.fuelEfficiency ? bus.fuelEfficiency.toFixed(1) : '',
-      bus.grossProfit,
-      bus.companyProfit,
-      bus.partnerProfit,
-    ]);
-    const busSheet = XLSX.utils.aoa_to_sheet([busHeaders, ...busRows]);
-    busSheet['!cols'] = busHeaders.map(() => ({ wch: 14 }));
-    XLSX.utils.book_append_sheet(workbook, busSheet, 'By Bus');
+    busSheet.addRow(busHeaders);
+    busProfitability.forEach(bus => {
+      busSheet.addRow([
+        bus.registration_number,
+        bus.bus_name || '',
+        bus.ownership_type,
+        bus.partner_name || '',
+        bus.tripCount,
+        bus.totalDistance,
+        bus.totalRevenue,
+        bus.totalExpense,
+        bus.fuelEfficiency ? bus.fuelEfficiency.toFixed(1) : '',
+        bus.grossProfit,
+        bus.companyProfit,
+        bus.partnerProfit,
+      ]);
+    });
+    busSheet.columns = busHeaders.map(() => ({ width: 14 }));
 
     // Driver Profitability sheet
+    const driverSheet = workbook.addWorksheet('By Driver');
     const driverHeaders = ['Driver Name', 'Trips', 'Distance (km)', 'Revenue', 'Expense', 'Profit'];
-    const driverRows = driverProfitability.map(driver => [
-      driver.full_name,
-      driver.tripCount,
-      driver.totalDistance,
-      driver.totalRevenue,
-      driver.totalExpense,
-      driver.profit,
-    ]);
-    const driverSheet = XLSX.utils.aoa_to_sheet([driverHeaders, ...driverRows]);
-    driverSheet['!cols'] = driverHeaders.map(() => ({ wch: 15 }));
-    XLSX.utils.book_append_sheet(workbook, driverSheet, 'By Driver');
+    driverSheet.addRow(driverHeaders);
+    driverProfitability.forEach(driver => {
+      driverSheet.addRow([
+        driver.full_name,
+        driver.tripCount,
+        driver.totalDistance,
+        driver.totalRevenue,
+        driver.totalExpense,
+        driver.profit,
+      ]);
+    });
+    driverSheet.columns = driverHeaders.map(() => ({ width: 15 }));
 
     // Route Profitability sheet
+    const routeSheet = workbook.addWorksheet('By Route');
     const routeHeaders = ['Route Name', 'Trips', 'Revenue', 'Expense', 'Avg Profit/Trip', 'Total Profit'];
-    const routeRows = routeProfitability.map(route => [
-      route.route_name,
-      route.tripCount,
-      route.totalRevenue,
-      route.totalExpense,
-      route.avgProfit,
-      route.profit,
-    ]);
-    const routeSheet = XLSX.utils.aoa_to_sheet([routeHeaders, ...routeRows]);
-    routeSheet['!cols'] = routeHeaders.map(() => ({ wch: 15 }));
-    XLSX.utils.book_append_sheet(workbook, routeSheet, 'By Route');
+    routeSheet.addRow(routeHeaders);
+    routeProfitability.forEach(route => {
+      routeSheet.addRow([
+        route.route_name,
+        route.tripCount,
+        route.totalRevenue,
+        route.totalExpense,
+        route.avgProfit,
+        route.profit,
+      ]);
+    });
+    routeSheet.columns = routeHeaders.map(() => ({ width: 15 }));
 
-    const filename = `Profitability_Report_${format(startDate, 'yyyyMMdd')}_${format(endDate, 'yyyyMMdd')}.xlsx`;
-    XLSX.writeFile(workbook, filename);
+    // Generate and download file
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `Profitability_Report_${format(startDate, 'yyyyMMdd')}_${format(endDate, 'yyyyMMdd')}.xlsx`;
+    link.click();
+    URL.revokeObjectURL(url);
   };
 
   const getProfitBadge = (profit: number) => {
