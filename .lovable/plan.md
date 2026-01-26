@@ -1,245 +1,200 @@
 
-# Plan: Create Comprehensive Analytics Dashboard
+# Plan: Improve Input GST Calculation
 
-## Overview
+## Problem Statement
 
-Create a dedicated Analytics page that provides deep insights into fleet operations with interactive charts, KPIs, trend analysis, and comparison views. This will complement the existing AdminDashboard (overview) and ProfitabilityReport (detailed financial analysis) with a focus on operational metrics and trends.
+The current GST Report calculates Input GST as a flat 15% estimate of all driver-submitted expenses, which is inaccurate. The user wants Input GST to be calculated only from:
 
----
+1. **Invoices** - Already have GST tracking (gst_amount field)
+2. **Repair Records** - Need to add GST fields for repair organizations to specify
+3. **Stock** - Water taken from stock has fixed pricing (currently no GST tracking)
 
-## Page Structure
-
-### 1. Header Section
-- Page title "Fleet Analytics"
-- Date range picker (similar to ProfitabilityReport)
-- Quick period buttons (This Week, This Month, This Quarter, This Year)
-- Export to Excel button
-
-### 2. KPI Summary Cards (Top Row)
-- **Revenue Performance**: Total revenue with trend comparison
-- **Profit Margin**: Percentage profit margin with indicator
-- **Trip Completion Rate**: Completed vs Scheduled percentage
-- **Fuel Efficiency**: Average km/liter across fleet
-
-### 3. Revenue Analytics Section
-- **Revenue Trend Chart**: Line chart showing daily/weekly/monthly revenue trends
-- **Revenue by Source**: Pie chart breaking down Cash, Online, Paytm, Agent, Others
-- **Revenue Comparison**: Bar chart comparing current period vs previous period
-
-### 4. Trip Analytics Section
-- **Trip Volume Trend**: Area chart showing trip counts over time
-- **Trip Status Distribution**: Donut chart (Completed, In Progress, Scheduled, Cancelled)
-- **Average Revenue per Trip**: Trend line with comparison
-
-### 5. Bus Performance Section
-- **Top Performing Buses**: Horizontal bar chart ranked by profit
-- **Bus Utilization**: Heatmap or bar showing trips per bus
-- **Fuel Efficiency Ranking**: Sorted bar chart (km/liter)
-
-### 6. Route Performance Section
-- **Most Profitable Routes**: Horizontal bar chart
-- **Route Frequency**: Bar chart showing trip counts by route
-- **Average Profit per Route**: Comparison view
-
-### 7. Driver Performance Section
-- **Top Drivers by Revenue**: Ranked list with sparklines
-- **Driver Trip Counts**: Bar chart
-- **Expense Submission Rate**: Compliance metric
-
-### 8. Expense Analysis Section
-- **Expense by Category**: Pie chart (Fuel, Toll, Food, Repairs, etc.)
-- **Expense Trend**: Line chart over time
-- **Expense vs Revenue Ratio**: Trend analysis
+Driver-submitted expenses should NOT be included in Input GST calculations.
 
 ---
 
 ## Technical Implementation
 
-### Files to Create
+### 1. Database Changes
 
-| File | Purpose |
-|------|---------|
-| `src/pages/admin/Analytics.tsx` | Main analytics page component |
+Add GST fields to `repair_records` table:
 
-### Files to Modify
+```sql
+ALTER TABLE public.repair_records 
+  ADD COLUMN IF NOT EXISTS gst_amount NUMERIC DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS gst_applicable BOOLEAN DEFAULT true,
+  ADD COLUMN IF NOT EXISTS gst_percentage NUMERIC DEFAULT 18;
+```
 
-| File | Change |
-|------|--------|
-| `src/App.tsx` | Add route `/admin/analytics` |
-| `src/components/layout/Sidebar.tsx` | Add navigation link with BarChart3 icon |
+Add GST rate field to `stock_items` table:
 
-### Data Fetching Strategy
+```sql
+ALTER TABLE public.stock_items 
+  ADD COLUMN IF NOT EXISTS gst_percentage NUMERIC DEFAULT 0;
+```
 
-The page will fetch data from existing tables using aggregation queries:
+### 2. Input GST Sources
+
+After implementation, Input GST will be calculated from:
+
+| Source | GST Data Location | Condition |
+|--------|------------------|-----------|
+| Invoices (Purchases) | Currently invoices are OUTPUT (sales to customers), not INPUT. Need to clarify if there are purchase invoices |
+| Repair Records | New `gst_amount` field | `status = 'approved'` and `gst_applicable = true` |
+| Stock Items | Calculate from `unit_price * gst_percentage` for water taken during trips | Based on trip `water_taken` field |
+
+### 3. Repair Dashboard Updates
+
+**File:** `src/pages/repair/RepairDashboard.tsx`
+
+Add GST input section to the repair submission form:
+
+- **GST Applicable** - Toggle switch (default: Yes)
+- **GST Amount (Rs)** - Input field for exact GST amount (visible when applicable)
+- **GST Rate** - Display field showing calculated percentage
+
+Form data state updates:
+```typescript
+const defaultFormData = {
+  // ... existing fields
+  gst_applicable: true,
+  gst_amount: '',
+};
+```
+
+### 4. Admin Repair Records View Updates
+
+**File:** `src/pages/admin/RepairRecords.tsx`
+
+Display GST information in the detail dialog:
+- Show GST Amount alongside Labor Cost and Parts Cost
+- Show "GST Not Applicable" badge if `gst_applicable = false`
+- Include GST in total cost breakdown
+
+### 5. GST Report Calculation Updates
+
+**File:** `src/pages/admin/GSTReport.tsx`
+
+Replace current expense-based estimation with actual GST from:
 
 ```typescript
-// Revenue by payment source
-SELECT 
-  SUM(revenue_cash) as cash,
-  SUM(revenue_online) as online,
-  SUM(revenue_paytm) as paytm,
-  SUM(revenue_agent) as agent,
-  SUM(revenue_others) as others
-FROM trips WHERE status = 'completed' AND date_range
+async function fetchInputGST() {
+  // 1. GST from approved repair records
+  const { data: repairData } = await supabase
+    .from('repair_records')
+    .select('gst_amount, gst_applicable')
+    .eq('status', 'approved')
+    .eq('gst_applicable', true)
+    .gte('repair_date', startDate)
+    .lte('repair_date', endDate);
+  
+  const repairGST = repairData?.reduce((sum, r) => 
+    sum + (Number(r.gst_amount) || 0), 0) || 0;
 
-// Daily revenue trend
-SELECT 
-  DATE(start_date) as date,
-  SUM(total_revenue) as revenue,
-  SUM(total_expense) as expense,
-  COUNT(*) as trips
-FROM trips GROUP BY DATE(start_date)
+  // 2. GST from stock used in trips (water)
+  const { data: tripData } = await supabase
+    .from('trips')
+    .select('water_taken')
+    .eq('status', 'completed')
+    .gte('start_date', startDate)
+    .lte('start_date', endDate);
+  
+  // Fetch stock item GST rate for water
+  const { data: stockItem } = await supabase
+    .from('stock_items')
+    .select('unit_price, gst_percentage')
+    .ilike('item_name', '%water%')
+    .single();
+  
+  const waterTaken = tripData?.reduce((sum, t) => 
+    sum + (Number(t.water_taken) || 0), 0) || 0;
+  const stockGSTRate = (stockItem?.gst_percentage || 0) / 100;
+  const stockValue = waterTaken * (stockItem?.unit_price || 0);
+  const stockGST = stockValue * stockGSTRate / (1 + stockGSTRate);
 
-// Expense breakdown
-SELECT 
-  ec.name, SUM(e.amount)
-FROM expenses e
-JOIN expense_categories ec ON e.category_id = ec.id
-WHERE e.status = 'approved'
-GROUP BY ec.name
+  // Total Input GST
+  const totalInputGST = repairGST + stockGST;
+  
+  return { repairGST, stockGST, totalInputGST };
+}
 ```
 
-### Key Features
+### 6. UI Display Updates
 
-1. **Interactive Charts**: Using Recharts (already in the project)
-   - Tooltips with detailed information
-   - Click-to-filter functionality
-   - Responsive design
-
-2. **Date Range Filtering**: Reusable pattern from ProfitabilityReport
-   - Start/end date pickers
-   - Quick period selectors
-
-3. **Real-time Calculations**:
-   - Profit margins
-   - Growth percentages
-   - Period comparisons
-
-4. **Export Functionality**: Using ExcelJS (already installed)
-   - Multi-sheet workbook
-   - Formatted data tables
-
-### UI Components Used
-- Card, CardHeader, CardTitle, CardContent (existing)
-- Tabs, TabsList, TabsTrigger, TabsContent (for section navigation)
-- Recharts: BarChart, LineChart, PieChart, AreaChart, RadialBarChart
-- Badge for indicators
-- Skeleton for loading states
-
----
-
-## Chart Components Detail
-
-### 1. Revenue Trend Line Chart
-```text
-     ₹50K |
-          |       ____
-     ₹40K |      /    \____
-          |     /          \
-     ₹30K |____/            \___
-          |________________________
-           Jan  Feb  Mar  Apr  May
-```
-
-### 2. Revenue Source Pie Chart
-```text
-        ┌─────────┐
-       /  Cash    \
-      │   45%     │
-      │   Online  │
-       \  35%    /
-        └─────────┘
-        Agent 15% | Others 5%
-```
-
-### 3. Bus Performance Bar Chart
-```text
-MH121454    ████████████████░░░  ₹4,920
-HR3829731   ████████████░░░░░░░  ₹3,900
-MP09BJ6966  ░░░░░░░░░░░░░░░░░░░  ₹0
-```
-
-### 4. Expense Category Breakdown
-```text
-Fuel     ████████████████  73%
-Toll     ████████          27%
-Food     ░░░░░░░░░░░░░░░░   0%
-```
-
----
-
-## State Management
+Update Input GST card subtitle from "Estimated from expenses" to "From repairs & stock":
 
 ```typescript
-interface AnalyticsState {
-  loading: boolean;
-  dateRange: { start: Date; end: Date };
-  
-  // KPIs
-  totalRevenue: number;
-  totalExpense: number;
-  profitMargin: number;
-  tripCompletionRate: number;
-  avgFuelEfficiency: number;
-  
-  // Trends
-  revenueTrend: { date: string; revenue: number; expense: number }[];
-  tripTrend: { date: string; count: number }[];
-  
-  // Breakdowns
-  revenueBySource: { source: string; amount: number }[];
-  expenseByCategory: { category: string; amount: number }[];
-  tripsByStatus: { status: string; count: number }[];
-  
-  // Performance
-  busPerformance: { name: string; revenue: number; profit: number; trips: number }[];
-  routePerformance: { name: string; revenue: number; trips: number }[];
-  driverPerformance: { name: string; revenue: number; trips: number }[];
+<p className="text-xs text-muted-foreground">From repairs & stock</p>
+```
+
+Add breakdown in GSTR-1 Summary section:
+```
+Input GST Breakdown:
+- Repair Bills: ₹X,XXX
+- Stock (Water): ₹XXX
+- Total Input: ₹X,XXX
+```
+
+### 7. Stock Management Updates
+
+**File:** `src/pages/admin/StockManagement.tsx`
+
+Add GST Rate field to the stock item form:
+
+```typescript
+<div className="space-y-2">
+  <Label htmlFor="gst_percentage">GST Rate (%)</Label>
+  <Input
+    id="gst_percentage"
+    type="number"
+    step="0.01"
+    value={formData.gst_percentage}
+    onChange={(e) => setFormData({ ...formData, gst_percentage: parseFloat(e.target.value) || 0 })}
+  />
+  <p className="text-xs text-muted-foreground">GST rate for this item (0 if exempt)</p>
+</div>
+```
+
+### 8. Type Definitions Update
+
+**File:** `src/types/database.ts`
+
+Add new fields to StockItem and create RepairRecord interface:
+
+```typescript
+export interface StockItem {
+  // ... existing fields
+  gst_percentage: number;
+}
+
+export interface RepairRecord {
+  // ... existing fields
+  gst_amount: number;
+  gst_applicable: boolean;
+  gst_percentage: number;
 }
 ```
 
 ---
 
-## Analytics Calculations
+## Files to Modify
 
-### Profit Margin
-```typescript
-const profitMargin = ((totalRevenue - totalExpense) / totalRevenue) * 100;
-```
-
-### Trip Completion Rate
-```typescript
-const completionRate = (completedTrips / totalScheduledTrips) * 100;
-```
-
-### Period Comparison (Growth)
-```typescript
-const revenueGrowth = ((currentPeriod - previousPeriod) / previousPeriod) * 100;
-```
-
-### Fuel Efficiency
-```typescript
-const efficiency = totalDistance / totalFuelLiters; // km/L
-```
-
----
-
-## Responsive Design
-
-- Desktop: 4-column grid for KPIs, 2-column for charts
-- Tablet: 2-column grid
-- Mobile: Single column, stacked layout
-- Charts resize automatically using ResponsiveContainer
+| File | Changes |
+|------|---------|
+| `src/pages/admin/GSTReport.tsx` | Replace expense-based Input GST with actual GST from repairs & stock |
+| `src/pages/repair/RepairDashboard.tsx` | Add GST fields to submission form |
+| `src/pages/admin/RepairRecords.tsx` | Display GST info in detail view |
+| `src/pages/admin/StockManagement.tsx` | Add GST rate field to stock items |
+| `src/types/database.ts` | Add GST fields to type definitions |
 
 ---
 
 ## Summary
 
-This Analytics page will provide:
-- **Visual insights** through interactive charts
-- **Trend analysis** for revenue, trips, and expenses
-- **Comparative views** across buses, routes, and drivers
-- **Actionable KPIs** for quick decision-making
-- **Export capability** for offline analysis
+This implementation will:
 
-The page follows existing patterns in ProfitabilityReport and GSTReport, ensuring consistency in UI and data handling.
+1. **Remove driver expenses** from Input GST calculation (as requested)
+2. **Add GST tracking to repair records** with option for "no GST" scenarios
+3. **Add GST rate to stock items** for accurate water/consumables GST
+4. **Calculate actual Input GST** from real data instead of estimates
+5. **Show clear breakdown** of Input GST sources in the report
