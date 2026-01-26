@@ -30,7 +30,7 @@ export default function DriverDashboard() {
   const [stats, setStats] = useState({ trips: 0, activeTrips: 0, pendingExpenses: 0, approvedExpenses: 0 });
   const [trips, setTrips] = useState<Trip[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
-  const [monthlyData, setMonthlyData] = useState({ trips: 0, revenue: 0, distance: 0 });
+  const [monthlyData, setMonthlyData] = useState({ trips: 0, distance: 0 });
 
   useEffect(() => {
     if (user) fetchAllData();
@@ -98,18 +98,16 @@ export default function DriverDashboard() {
 
     const { data: monthlyTrips } = await supabase
       .from('trips')
-      .select('id, total_revenue, return_total_revenue, distance_traveled, distance_return')
+      .select('id, distance_traveled, distance_return')
       .eq('driver_id', profileId)
       .eq('status', 'completed')
       .gte('start_date', monthStart)
       .lte('start_date', monthEnd);
 
     if (monthlyTrips) {
-      const revenue = monthlyTrips.reduce((sum, t) => sum + (Number(t.total_revenue) || 0) + (Number(t.return_total_revenue) || 0), 0);
       const distance = monthlyTrips.reduce((sum, t) => sum + (Number(t.distance_traveled) || 0) + (Number(t.distance_return) || 0), 0);
       setMonthlyData({
         trips: monthlyTrips.length,
-        revenue,
         distance,
       });
     }
@@ -223,7 +221,6 @@ export default function DriverDashboard() {
         {/* Monthly Summary */}
         <EarningsSummaryCard 
           monthlyTrips={monthlyData.trips}
-          monthlyRevenue={monthlyData.revenue}
           totalDistance={monthlyData.distance}
         />
 

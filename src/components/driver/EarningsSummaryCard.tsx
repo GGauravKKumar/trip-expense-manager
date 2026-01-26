@@ -1,14 +1,13 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { TrendingUp, Calendar, Truck, IndianRupee } from 'lucide-react';
-import { format, startOfMonth, endOfMonth } from 'date-fns';
+import { TrendingUp, Calendar, Truck, Route } from 'lucide-react';
+import { format } from 'date-fns';
 
 interface EarningsSummaryProps {
   monthlyTrips: number;
-  monthlyRevenue: number;
   totalDistance: number;
 }
 
-export default function EarningsSummaryCard({ monthlyTrips, monthlyRevenue, totalDistance }: EarningsSummaryProps) {
+export default function EarningsSummaryCard({ monthlyTrips, totalDistance }: EarningsSummaryProps) {
   const now = new Date();
   const monthName = format(now, 'MMMM yyyy');
 
@@ -25,32 +24,25 @@ export default function EarningsSummaryCard({ monthlyTrips, monthlyRevenue, tota
         </p>
       </CardHeader>
       <CardContent>
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-2 gap-4">
           <div className="text-center">
             <div className="flex items-center justify-center gap-1 text-2xl font-bold text-primary">
               {monthlyTrips}
             </div>
             <div className="text-xs text-muted-foreground flex items-center justify-center gap-1">
               <Truck className="h-3 w-3" />
-              Trips
+              Trips Completed
             </div>
           </div>
           
-          <div className="text-center border-x border-primary/20">
-            <div className="flex items-center justify-center gap-1 text-2xl font-bold text-primary">
-              ₹{(monthlyRevenue / 1000).toFixed(1)}k
-            </div>
-            <div className="text-xs text-muted-foreground flex items-center justify-center gap-1">
-              <IndianRupee className="h-3 w-3" />
-              Revenue
-            </div>
-          </div>
-          
-          <div className="text-center">
+          <div className="text-center border-l border-primary/20">
             <div className="flex items-center justify-center gap-1 text-2xl font-bold text-primary">
               {totalDistance.toLocaleString()}
             </div>
-            <div className="text-xs text-muted-foreground">km Driven</div>
+            <div className="text-xs text-muted-foreground flex items-center justify-center gap-1">
+              <Route className="h-3 w-3" />
+              km Driven
+            </div>
           </div>
         </div>
       </CardContent>
