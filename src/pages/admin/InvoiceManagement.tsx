@@ -14,7 +14,7 @@ import { format } from 'date-fns';
 import InvoiceDialog from '@/components/InvoiceDialog';
 import InvoiceDetailDialog from '@/components/InvoiceDetailDialog';
 import InvoicePaymentDialog from '@/components/InvoicePaymentDialog';
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 
 export type InvoiceType = 'customer' | 'online_app' | 'charter';
 export type InvoiceStatus = 'draft' | 'sent' | 'partial' | 'paid' | 'overdue' | 'cancelled';
@@ -151,49 +151,95 @@ export default function InvoiceManagement() {
       .select('*')
       .in('invoice_id', invoiceIds);
 
+    const workbook = new ExcelJS.Workbook();
+    
     // Create invoice summary sheet
-    const invoiceSummary = filteredInvoices.map((inv) => ({
-      'Invoice Number': inv.invoice_number,
-      'Date': format(new Date(inv.invoice_date), 'dd/MM/yyyy'),
-      'Due Date': inv.due_date ? format(new Date(inv.due_date), 'dd/MM/yyyy') : '',
-      'Customer': inv.customer_name,
-      'Customer GST': inv.customer_gst || '',
-      'Type': inv.invoice_type,
-      'Subtotal (Base)': inv.subtotal,
-      'Total GST': inv.gst_amount,
-      'Grand Total': inv.total_amount,
-      'Paid': inv.amount_paid,
-      'Balance': inv.balance_due,
-      'Status': inv.status,
-    }));
-
+    const summarySheet = workbook.addWorksheet('Invoice Summary');
+    summarySheet.columns = [
+      { header: 'Invoice Number', key: 'invoiceNumber', width: 15 },
+      { header: 'Date', key: 'date', width: 12 },
+      { header: 'Due Date', key: 'dueDate', width: 12 },
+      { header: 'Customer', key: 'customer', width: 25 },
+      { header: 'Customer GST', key: 'customerGst', width: 18 },
+      { header: 'Type', key: 'type', width: 12 },
+      { header: 'Subtotal (Base)', key: 'subtotal', width: 15 },
+      { header: 'Total GST', key: 'gstAmount', width: 12 },
+      { header: 'Grand Total', key: 'totalAmount', width: 12 },
+      { header: 'Paid', key: 'paid', width: 12 },
+      { header: 'Balance', key: 'balance', width: 12 },
+      { header: 'Status', key: 'status', width: 10 },
+    ];
+    
+    filteredInvoices.forEach((inv) => {
+      summarySheet.addRow({
+        invoiceNumber: inv.invoice_number,
+        date: format(new Date(inv.invoice_date), 'dd/MM/yyyy'),
+        dueDate: inv.due_date ? format(new Date(inv.due_date), 'dd/MM/yyyy') : '',
+        customer: inv.customer_name,
+        customerGst: inv.customer_gst || '',
+        type: inv.invoice_type,
+        subtotal: inv.subtotal,
+        gstAmount: inv.gst_amount,
+        totalAmount: inv.total_amount,
+        paid: inv.amount_paid,
+        balance: inv.balance_due,
+        status: inv.status,
+      });
+    });
+    
     // Create line items detail sheet
-    const lineItemsExport = (allLineItems || []).map((item: InvoiceLineItem) => {
+    const lineItemsSheet = workbook.addWorksheet('Line Items Detail');
+    lineItemsSheet.columns = [
+      { header: 'Invoice Number', key: 'invoiceNumber', width: 15 },
+      { header: 'Customer', key: 'customer', width: 25 },
+      { header: 'Description', key: 'description', width: 30 },
+      { header: 'Quantity', key: 'quantity', width: 10 },
+      { header: 'Unit Rate', key: 'unitRate', width: 12 },
+      { header: 'Rate Includes GST', key: 'rateIncludesGst', width: 16 },
+      { header: 'GST %', key: 'gstPercentage', width: 8 },
+      { header: 'Base Amount', key: 'baseAmount', width: 12 },
+      { header: 'GST Amount', key: 'gstAmount', width: 12 },
+      { header: 'Total Amount', key: 'totalAmount', width: 12 },
+      { header: 'Is Deduction', key: 'isDeduction', width: 12 },
+    ];
+    
+    (allLineItems || []).forEach((item: InvoiceLineItem) => {
       const invoice = filteredInvoices.find(inv => inv.id === item.invoice_id);
-      return {
-        'Invoice Number': invoice?.invoice_number || '',
-        'Customer': invoice?.customer_name || '',
-        'Description': item.description,
-        'Quantity': item.quantity,
-        'Unit Rate': item.unit_price,
-        'Rate Includes GST': item.rate_includes_gst ? 'Yes' : 'No',
-        'GST %': item.gst_percentage,
-        'Base Amount': item.base_amount,
-        'GST Amount': item.gst_amount,
-        'Total Amount': item.amount,
-        'Is Deduction': item.is_deduction ? 'Yes' : 'No',
+      lineItemsSheet.addRow({
+        invoiceNumber: invoice?.invoice_number || '',
+        customer: invoice?.customer_name || '',
+        description: item.description,
+        quantity: item.quantity,
+        unitRate: item.unit_price,
+        rateIncludesGst: item.rate_includes_gst ? 'Yes' : 'No',
+        gstPercentage: item.gst_percentage,
+        baseAmount: item.base_amount,
+        gstAmount: item.gst_amount,
+        totalAmount: item.amount,
+        isDeduction: item.is_deduction ? 'Yes' : 'No',
+      });
+    });
+    
+    // Style header rows
+    [summarySheet, lineItemsSheet].forEach(sheet => {
+      const headerRow = sheet.getRow(1);
+      headerRow.font = { bold: true };
+      headerRow.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FFE0E0E0' }
       };
     });
-
-    const wb = XLSX.utils.book_new();
     
-    const ws1 = XLSX.utils.json_to_sheet(invoiceSummary);
-    XLSX.utils.book_append_sheet(wb, ws1, 'Invoice Summary');
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Invoices_${format(new Date(), 'yyyyMMdd')}.xlsx`;
+    a.click();
+    URL.revokeObjectURL(url);
     
-    const ws2 = XLSX.utils.json_to_sheet(lineItemsExport);
-    XLSX.utils.book_append_sheet(wb, ws2, 'Line Items Detail');
-    
-    XLSX.writeFile(wb, `Invoices_${format(new Date(), 'yyyyMMdd')}.xlsx`);
     toast.success('Exported to Excel with GST details');
   }
 

@@ -203,8 +203,17 @@ export default function RepairDashboard() {
       return null;
     }
 
-    const { data } = supabase.storage.from('repair-photos').getPublicUrl(fileName);
-    return data.publicUrl;
+    // Use signed URL for secure access (4 hour expiry)
+    const { data, error } = await supabase.storage
+      .from('repair-photos')
+      .createSignedUrl(fileName, 14400);
+    
+    if (error || !data?.signedUrl) {
+      console.error('Error creating signed URL:', error);
+      return null;
+    }
+    
+    return data.signedUrl;
   }
 
   async function handleSubmit(e: React.FormEvent) {
