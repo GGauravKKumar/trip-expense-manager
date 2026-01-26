@@ -1,99 +1,244 @@
-# Plan: Fleet Management Enhancements - Implementation Progress
 
-## ✅ Completed Enhancements
+# Plan: Implement Multi-Day Continuous Bus Scheduling
 
-### 1. Enhanced Driver Dashboard ✅
-- Added upcoming trips list with countdown timers
-- Quick action buttons (Start Trip, Add Expense, Update Odometer, Profile)
-- Current active trip card with progress indicator
-- Recent expense history with status badges
-- Monthly earnings summary (trips, revenue, distance)
-- Created focused components:
-  - `src/components/driver/UpcomingTripsCard.tsx`
-  - `src/components/driver/ActiveTripCard.tsx`
-  - `src/components/driver/RecentExpensesCard.tsx`
-  - `src/components/driver/QuickActionsCard.tsx`
-  - `src/components/driver/EarningsSummaryCard.tsx`
+## Problem Analysis
 
-### 2. GST Summary and Tax Reports ✅
-- Created dedicated GST Report page (`src/pages/admin/GSTReport.tsx`)
-- Monthly/Quarterly/Yearly GST summaries
-- Output GST (collected) vs Input GST (paid) breakdown
-- Invoice GST details table
-- Trip revenue GST details table
-- GSTR-1 compatible summary
-- Excel export with multiple sheets
-- Added route `/admin/gst-report`
-- Added sidebar navigation with IndianRupee icon
+Your bus scheduling pattern is a **continuous overnight service** that the current system doesn't handle correctly:
 
-### 3. Trip Timeline Visualization ✅
-- Created `src/components/TripTimeline.tsx`
-- Visual progress bar for trip status (Scheduled > In Progress > Completed)
-- Graphical timeline showing outward and return journey for two-way trips
-- Color-coded status indicators
-- Compact mode for table views
+```text
+Day 1 (Jan 1):
+  20:15 - Depart Delhi for Manali
 
----
+Day 2 (Jan 2):
+  06:00 - Arrive Manali
+  09:00 - Depart Manali for Delhi  
+  18:00 - Arrive Delhi
+  20:15 - Depart Delhi for Manali (NEW TRIP)
 
-## 🔄 Remaining Enhancements
+Day 3 (Jan 3): Same as Day 2...
+```
 
-### 4. Interactive Admin Dashboard Charts
-- Rich tooltips showing detailed breakdowns
-- Click-to-filter functionality
-- Revenue breakdown by source in pie charts
-- Quick navigation links from dashboard cards
+**Current Issue:** The system generates a new trip every day at midnight, but the previous day's trip (which spans overnight) isn't completed yet, causing:
+1. Duplicate trips being generated
+2. Bus appearing "double-booked"
+3. Confusion about which trip is which
 
-### 5. Quick Driver Assignment from Trip Table
-- Inline driver dropdown in trip table row
-- "Assign Driver" quick action button
-- Visual indicator for unassigned trips
-- Filter for "Unassigned Trips"
+## Root Cause
 
-### 6. Fuel Efficiency Tracking Dashboard Widget
-- Dedicated fuel efficiency card on dashboard
-- Trend chart showing efficiency over time per bus
-- Alerts for buses with declining efficiency
-- Comparison view across all buses
+The current system treats each day independently:
+- **Schedule says:** "Run daily at 20:15"
+- **System does:** Creates a new trip record every day at midnight
+- **Problem:** The 20:15 departure from yesterday arrives at 06:00 today, overlapping with today's new trip
 
-### 7. Driver Performance Metrics
-- Trip completion rate
-- Average revenue per trip
-- Expense submission compliance
-- On-time trip completion percentage
-- Performance ranking/leaderboard
+## Solution Overview
 
-### 8. Bulk Actions for Trip Management
-- Multi-select checkbox for trips
-- Bulk status change (Cancel multiple trips)
-- Bulk driver assignment
-- Bulk export selection
-
-### 9. Route Analytics and Optimization
-- Route comparison charts
-- Optimal bus-route matching suggestions
-- Best performing days for each route
-- Average delay/timing analysis
-
-### 10. Mobile-Friendly Driver Interface
-- Bottom navigation bar for mobile
-- Swipe actions for quick updates
-- Large touch-friendly buttons
-- Offline-ready expense form with sync
+Implement a **trip cycle awareness** system that understands when a trip from the previous day is still in progress and links consecutive trips properly.
 
 ---
 
-## Files Created/Modified
+## Technical Implementation
 
-### New Files Created:
-- `src/components/driver/UpcomingTripsCard.tsx`
-- `src/components/driver/ActiveTripCard.tsx`
-- `src/components/driver/RecentExpensesCard.tsx`
-- `src/components/driver/QuickActionsCard.tsx`
-- `src/components/driver/EarningsSummaryCard.tsx`
+### 1. Add Trip Linking Fields to Database
+
+Add new columns to track trip cycles:
+
+```sql
+ALTER TABLE trips ADD COLUMN IF NOT EXISTS previous_trip_id UUID REFERENCES trips(id);
+ALTER TABLE trips ADD COLUMN IF NOT EXISTS next_trip_id UUID REFERENCES trips(id);
+ALTER TABLE trips ADD COLUMN IF NOT EXISTS cycle_position INTEGER DEFAULT 1;
+```
+
+This creates a chain: Trip A (Day 1) -> Trip B (Day 2) -> Trip C (Day 3)
+
+### 2. Update Edge Function Logic
+
+Modify `generate-scheduled-trips/index.ts` to:
+
+1. **Check for completing trips:** Before generating a new trip, check if there's a trip from yesterday that should be completing today
+2. **Link consecutive trips:** When creating today's trip, link it to yesterday's trip
+3. **Smart status handling:** Only create a "scheduled" trip if the previous one has reached a certain point
+
+**New Logic Flow:**
+```text
+For each schedule:
+  1. Find yesterday's trip for this bus/schedule
+  2. If yesterday's trip exists and is 'in_progress':
+     - Check if it should be completing soon (arrival time passed)
+     - If yes, create today's trip as "scheduled" but linked
+     - If no, skip - bus still on outward journey
+  3. If yesterday's trip is 'completed' or no previous trip:
+     - Create today's trip normally
+```
+
+### 3. Update Schedule Management UI
+
+Add new fields to the schedule form:
+
+- **Journey Span Indicator:** Visual display showing the overnight nature
+- **Next Day Arrival Checkbox:** Explicit flag for overnight journeys
+- **Turnaround Time:** Time between arrival and next departure
+
+**Files to modify:**
+- `src/pages/admin/ScheduleManagement.tsx`
+
+### 4. Update Trip Management Display
+
+Show trip chains visually:
+
+- Display linked trips together
+- Show "Continues from yesterday" indicator
+- Add "Chain View" to see multi-day trip sequences
+
+**Files to modify:**
+- `src/pages/admin/TripManagement.tsx`
 - `src/components/TripTimeline.tsx`
-- `src/pages/admin/GSTReport.tsx`
 
-### Files Modified:
-- `src/pages/driver/DriverDashboard.tsx` - Complete rewrite with new components
-- `src/App.tsx` - Added GST Report route
-- `src/components/layout/Sidebar.tsx` - Added GST Report navigation
+### 5. Update Driver Trip View
+
+Enhance driver interface to show:
+
+- Current trip context (which day of the cycle)
+- Quick view of upcoming continuation
+- Clear distinction between outward and return legs
+
+**Files to modify:**
+- `src/pages/driver/DriverTrips.tsx`
+
+---
+
+## Database Changes
+
+### New Columns for Trips Table
+
+| Column | Type | Purpose |
+|--------|------|---------|
+| `previous_trip_id` | UUID | Link to yesterday's trip |
+| `next_trip_id` | UUID | Link to tomorrow's trip |
+| `cycle_position` | INTEGER | Day number in multi-day cycle |
+| `expected_arrival_date` | DATE | When bus arrives at destination |
+
+### Schedule Table Updates
+
+| Column | Type | Purpose |
+|--------|------|---------|
+| `is_overnight` | BOOLEAN | Flag for overnight journeys |
+| `arrival_next_day` | BOOLEAN | Arrival is on next calendar day |
+| `turnaround_hours` | NUMERIC | Hours between arrival and next departure |
+
+---
+
+## Edge Function Updates
+
+### File: `supabase/functions/generate-scheduled-trips/index.ts`
+
+**Key Changes:**
+
+1. Calculate expected arrival date based on times:
+```typescript
+// Detect overnight journey
+const isOvernight = arrivalMinutes < departureMinutes;
+const arrivalDate = isOvernight 
+  ? addDays(departureDate, 1) 
+  : departureDate;
+```
+
+2. Check for active trips before creating:
+```typescript
+// Find yesterday's trip that may still be active
+const yesterdayDate = subtractDays(today, 1);
+const { data: yesterdayTrip } = await supabase
+  .from("trips")
+  .select("id, status, arrival_time")
+  .eq("schedule_id", schedule.id)
+  .eq("trip_date", yesterdayDate)
+  .maybeSingle();
+
+// For overnight services, check if yesterday's trip is done
+if (yesterdayTrip && yesterdayTrip.status === 'in_progress') {
+  const now = new Date();
+  const todayArrivalTime = parseTime(schedule.arrival_time);
+  
+  if (now < todayArrivalTime) {
+    // Bus hasn't arrived yet - skip creating new trip
+    console.log(`Skipping: Bus still en route from yesterday's trip`);
+    continue;
+  }
+}
+```
+
+3. Link trips when creating:
+```typescript
+// Link to previous trip if exists
+if (yesterdayTrip) {
+  tripData.previous_trip_id = yesterdayTrip.id;
+  
+  // Also update yesterday's trip with next_trip_id
+  await supabase
+    .from("trips")
+    .update({ next_trip_id: newTripId })
+    .eq("id", yesterdayTrip.id);
+}
+```
+
+---
+
+## UI Enhancements
+
+### Schedule Form Visual Timeline
+
+Add a visual representation showing the overnight pattern:
+
+```text
+┌─────────────────────────────────────────────────────────────┐
+│  Day 1                    │  Day 2                          │
+│                           │                                 │
+│  20:15 ──────────────────── 06:00 (Outward)                │
+│                             09:00 ──────────── 18:00       │
+│                                                  (Return)   │
+│                             20:15 ──── ... (Next Cycle)    │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Trip Table Enhancements
+
+- Group consecutive trips visually
+- Show chain indicators (←→ icons)
+- Add "Cycle" column showing position
+
+---
+
+## Files to Create
+
+| File | Purpose |
+|------|---------|
+| `src/components/TripChainIndicator.tsx` | Visual indicator for linked trips |
+| `src/components/ScheduleTimeline.tsx` | Visual timeline for schedule creation |
+
+## Files to Modify
+
+| File | Changes |
+|------|---------|
+| `supabase/functions/generate-scheduled-trips/index.ts` | Add trip linking and overnight detection |
+| `src/pages/admin/ScheduleManagement.tsx` | Add overnight schedule options and visual timeline |
+| `src/pages/admin/TripManagement.tsx` | Show trip chains and linked trips |
+| `src/pages/driver/DriverTrips.tsx` | Show cycle context for drivers |
+| `src/components/TripTimeline.tsx` | Enhance to show multi-day context |
+| `src/types/database.ts` | Add new Trip fields |
+
+---
+
+## Summary
+
+This solution:
+
+1. **Prevents double-booking** by understanding overnight journeys
+2. **Links consecutive trips** for easy tracking
+3. **Shows clear visual context** for multi-day cycles
+4. **Handles the Delhi-Manali pattern** exactly as you described
+
+The system will understand that:
+- Departing at 20:15 PM means arriving at 06:00 AM **next day**
+- The return at 09:00 AM completes at 18:00 PM same day
+- The next cycle starts at 20:15 PM same day (after turnaround)
+- Each cycle spans 2 calendar days for the outward journey
+
