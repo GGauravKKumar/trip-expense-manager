@@ -136,12 +136,26 @@ export default function ScheduleManagement() {
   }
 
   async function fetchDrivers() {
-    const { data } = await supabase
+    // First get all user_ids with driver role
+    const { data: driverRoles } = await supabase
+      .from('user_roles')
+      .select('user_id')
+      .eq('role', 'driver');
+    
+    if (!driverRoles || driverRoles.length === 0) {
+      setDrivers([]);
+      return;
+    }
+
+    // Then fetch profiles for those user_ids
+    const driverUserIds = driverRoles.map(r => r.user_id);
+    const { data: profiles } = await supabase
       .from('profiles')
-      .select('*, user_roles!inner(role)')
-      .eq('user_roles.role', 'driver')
+      .select('*')
+      .in('user_id', driverUserIds)
       .order('full_name');
-    setDrivers(data as Profile[] || []);
+    
+    setDrivers(profiles as Profile[] || []);
   }
 
   function handleEdit(schedule: BusSchedule) {
