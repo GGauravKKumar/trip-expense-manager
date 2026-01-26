@@ -1,6 +1,6 @@
-# Self-Hosting Guide - Fleet Manager
+# Self-Hosting Guide - BusManager
 
-This guide explains how to run Fleet Manager **completely offline** on your own infrastructure using Docker.
+This guide explains how to run BusManager **completely offline** on your own infrastructure using Docker.
 
 ## Quick Start (One Command)
 
@@ -18,7 +18,7 @@ docker compose up -d
 **Access Points:**
 | Service | URL | Description |
 |---------|-----|-------------|
-| **App** | http://localhost:5173 | Fleet Manager Frontend |
+| **App** | http://localhost:5173 | BusManager Frontend |
 | **API** | http://localhost:8000 | Supabase API Gateway |
 | **Studio** | http://localhost:3000 | Database Admin UI |
 | **Database** | localhost:5432 | PostgreSQL |
@@ -83,7 +83,7 @@ Connect to the database and create your first admin:
 
 ```bash
 # Option A: Using psql
-docker exec -it fleet-db psql -U postgres -c \
+docker exec -it busmanager-db psql -U postgres -c \
   "SELECT create_user_with_role('admin@yourcompany.com', 'YourSecurePassword123', 'Admin Name', 'admin');"
 
 # Option B: Using Studio
@@ -168,15 +168,15 @@ SELECT create_user_with_role(
 
 | Service | Container | Port | Purpose |
 |---------|-----------|------|---------|
-| Frontend | fleet-frontend | 5173 | React app |
-| Kong | fleet-kong | 8000 | API Gateway |
-| Auth | fleet-auth | 9999 | Authentication (GoTrue) |
-| REST | fleet-rest | 3001 | PostgREST API |
-| Realtime | fleet-realtime | 4000 | WebSocket subscriptions |
-| Storage | fleet-storage | 5000 | File storage |
-| Database | fleet-db | 5432 | PostgreSQL |
-| Studio | fleet-studio | 3000 | Admin UI |
-| Meta | fleet-meta | - | DB metadata for Studio |
+| Frontend | busmanager-frontend | 5173 | React app |
+| Kong | busmanager-kong | 8000 | API Gateway |
+| Auth | busmanager-auth | 9999 | Authentication (GoTrue) |
+| REST | busmanager-rest | 3001 | PostgREST API |
+| Realtime | busmanager-realtime | 4000 | WebSocket subscriptions |
+| Storage | busmanager-storage | 5000 | File storage |
+| Database | busmanager-db | 5432 | PostgreSQL |
+| Studio | busmanager-studio | 3000 | Admin UI |
+| Meta | busmanager-meta | - | DB metadata for Studio |
 
 ---
 
@@ -184,16 +184,16 @@ SELECT create_user_with_role(
 
 Data is stored in Docker volumes:
 - `db-data` - PostgreSQL database
-- `storage-data` - Uploaded files
+- `storage-data` - Uploaded files (expense documents, repair photos)
 
 ### Backup Database
 
 ```bash
 # Create backup
-docker exec fleet-db pg_dump -U postgres postgres > backup.sql
+docker exec busmanager-db pg_dump -U postgres postgres > backup.sql
 
 # Restore backup
-cat backup.sql | docker exec -i fleet-db psql -U postgres postgres
+cat backup.sql | docker exec -i busmanager-db psql -U postgres postgres
 ```
 
 ### Backup Everything
@@ -309,10 +309,10 @@ docker compose logs auth
 
 ```bash
 # Test database connection
-docker exec -it fleet-db psql -U postgres -c "SELECT 1;"
+docker exec -it busmanager-db psql -U postgres -c "SELECT 1;"
 
 # Check if init script ran
-docker exec -it fleet-db psql -U postgres -c "SELECT COUNT(*) FROM indian_states;"
+docker exec -it busmanager-db psql -U postgres -c "SELECT COUNT(*) FROM indian_states;"
 ```
 
 ### Auth Not Working
@@ -332,7 +332,7 @@ docker compose config | grep JWT_SECRET
 docker compose logs frontend
 
 # Verify environment variables
-docker exec fleet-frontend env | grep VITE
+docker exec busmanager-frontend env | grep VITE
 ```
 
 ### Storage Upload Fails
@@ -342,7 +342,7 @@ docker exec fleet-frontend env | grep VITE
 docker compose logs storage
 
 # Verify buckets exist
-docker exec -it fleet-db psql -U postgres -c "SELECT * FROM storage.buckets;"
+docker exec -it busmanager-db psql -U postgres -c "SELECT * FROM storage.buckets;"
 ```
 
 ---

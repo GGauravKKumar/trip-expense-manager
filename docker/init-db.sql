@@ -1,4 +1,4 @@
--- Fleet Manager Database Initialization Script
+-- BusManager Database Initialization Script
 -- This script sets up the complete database schema for self-hosted deployment
 -- Updated: Complete schema matching cloud deployment
 
