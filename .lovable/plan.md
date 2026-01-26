@@ -1,244 +1,245 @@
 
-# Plan: Implement Multi-Day Continuous Bus Scheduling
+# Plan: Create Comprehensive Analytics Dashboard
 
-## Problem Analysis
+## Overview
 
-Your bus scheduling pattern is a **continuous overnight service** that the current system doesn't handle correctly:
+Create a dedicated Analytics page that provides deep insights into fleet operations with interactive charts, KPIs, trend analysis, and comparison views. This will complement the existing AdminDashboard (overview) and ProfitabilityReport (detailed financial analysis) with a focus on operational metrics and trends.
 
-```text
-Day 1 (Jan 1):
-  20:15 - Depart Delhi for Manali
+---
 
-Day 2 (Jan 2):
-  06:00 - Arrive Manali
-  09:00 - Depart Manali for Delhi  
-  18:00 - Arrive Delhi
-  20:15 - Depart Delhi for Manali (NEW TRIP)
+## Page Structure
 
-Day 3 (Jan 3): Same as Day 2...
-```
+### 1. Header Section
+- Page title "Fleet Analytics"
+- Date range picker (similar to ProfitabilityReport)
+- Quick period buttons (This Week, This Month, This Quarter, This Year)
+- Export to Excel button
 
-**Current Issue:** The system generates a new trip every day at midnight, but the previous day's trip (which spans overnight) isn't completed yet, causing:
-1. Duplicate trips being generated
-2. Bus appearing "double-booked"
-3. Confusion about which trip is which
+### 2. KPI Summary Cards (Top Row)
+- **Revenue Performance**: Total revenue with trend comparison
+- **Profit Margin**: Percentage profit margin with indicator
+- **Trip Completion Rate**: Completed vs Scheduled percentage
+- **Fuel Efficiency**: Average km/liter across fleet
 
-## Root Cause
+### 3. Revenue Analytics Section
+- **Revenue Trend Chart**: Line chart showing daily/weekly/monthly revenue trends
+- **Revenue by Source**: Pie chart breaking down Cash, Online, Paytm, Agent, Others
+- **Revenue Comparison**: Bar chart comparing current period vs previous period
 
-The current system treats each day independently:
-- **Schedule says:** "Run daily at 20:15"
-- **System does:** Creates a new trip record every day at midnight
-- **Problem:** The 20:15 departure from yesterday arrives at 06:00 today, overlapping with today's new trip
+### 4. Trip Analytics Section
+- **Trip Volume Trend**: Area chart showing trip counts over time
+- **Trip Status Distribution**: Donut chart (Completed, In Progress, Scheduled, Cancelled)
+- **Average Revenue per Trip**: Trend line with comparison
 
-## Solution Overview
+### 5. Bus Performance Section
+- **Top Performing Buses**: Horizontal bar chart ranked by profit
+- **Bus Utilization**: Heatmap or bar showing trips per bus
+- **Fuel Efficiency Ranking**: Sorted bar chart (km/liter)
 
-Implement a **trip cycle awareness** system that understands when a trip from the previous day is still in progress and links consecutive trips properly.
+### 6. Route Performance Section
+- **Most Profitable Routes**: Horizontal bar chart
+- **Route Frequency**: Bar chart showing trip counts by route
+- **Average Profit per Route**: Comparison view
+
+### 7. Driver Performance Section
+- **Top Drivers by Revenue**: Ranked list with sparklines
+- **Driver Trip Counts**: Bar chart
+- **Expense Submission Rate**: Compliance metric
+
+### 8. Expense Analysis Section
+- **Expense by Category**: Pie chart (Fuel, Toll, Food, Repairs, etc.)
+- **Expense Trend**: Line chart over time
+- **Expense vs Revenue Ratio**: Trend analysis
 
 ---
 
 ## Technical Implementation
 
-### 1. Add Trip Linking Fields to Database
-
-Add new columns to track trip cycles:
-
-```sql
-ALTER TABLE trips ADD COLUMN IF NOT EXISTS previous_trip_id UUID REFERENCES trips(id);
-ALTER TABLE trips ADD COLUMN IF NOT EXISTS next_trip_id UUID REFERENCES trips(id);
-ALTER TABLE trips ADD COLUMN IF NOT EXISTS cycle_position INTEGER DEFAULT 1;
-```
-
-This creates a chain: Trip A (Day 1) -> Trip B (Day 2) -> Trip C (Day 3)
-
-### 2. Update Edge Function Logic
-
-Modify `generate-scheduled-trips/index.ts` to:
-
-1. **Check for completing trips:** Before generating a new trip, check if there's a trip from yesterday that should be completing today
-2. **Link consecutive trips:** When creating today's trip, link it to yesterday's trip
-3. **Smart status handling:** Only create a "scheduled" trip if the previous one has reached a certain point
-
-**New Logic Flow:**
-```text
-For each schedule:
-  1. Find yesterday's trip for this bus/schedule
-  2. If yesterday's trip exists and is 'in_progress':
-     - Check if it should be completing soon (arrival time passed)
-     - If yes, create today's trip as "scheduled" but linked
-     - If no, skip - bus still on outward journey
-  3. If yesterday's trip is 'completed' or no previous trip:
-     - Create today's trip normally
-```
-
-### 3. Update Schedule Management UI
-
-Add new fields to the schedule form:
-
-- **Journey Span Indicator:** Visual display showing the overnight nature
-- **Next Day Arrival Checkbox:** Explicit flag for overnight journeys
-- **Turnaround Time:** Time between arrival and next departure
-
-**Files to modify:**
-- `src/pages/admin/ScheduleManagement.tsx`
-
-### 4. Update Trip Management Display
-
-Show trip chains visually:
-
-- Display linked trips together
-- Show "Continues from yesterday" indicator
-- Add "Chain View" to see multi-day trip sequences
-
-**Files to modify:**
-- `src/pages/admin/TripManagement.tsx`
-- `src/components/TripTimeline.tsx`
-
-### 5. Update Driver Trip View
-
-Enhance driver interface to show:
-
-- Current trip context (which day of the cycle)
-- Quick view of upcoming continuation
-- Clear distinction between outward and return legs
-
-**Files to modify:**
-- `src/pages/driver/DriverTrips.tsx`
-
----
-
-## Database Changes
-
-### New Columns for Trips Table
-
-| Column | Type | Purpose |
-|--------|------|---------|
-| `previous_trip_id` | UUID | Link to yesterday's trip |
-| `next_trip_id` | UUID | Link to tomorrow's trip |
-| `cycle_position` | INTEGER | Day number in multi-day cycle |
-| `expected_arrival_date` | DATE | When bus arrives at destination |
-
-### Schedule Table Updates
-
-| Column | Type | Purpose |
-|--------|------|---------|
-| `is_overnight` | BOOLEAN | Flag for overnight journeys |
-| `arrival_next_day` | BOOLEAN | Arrival is on next calendar day |
-| `turnaround_hours` | NUMERIC | Hours between arrival and next departure |
-
----
-
-## Edge Function Updates
-
-### File: `supabase/functions/generate-scheduled-trips/index.ts`
-
-**Key Changes:**
-
-1. Calculate expected arrival date based on times:
-```typescript
-// Detect overnight journey
-const isOvernight = arrivalMinutes < departureMinutes;
-const arrivalDate = isOvernight 
-  ? addDays(departureDate, 1) 
-  : departureDate;
-```
-
-2. Check for active trips before creating:
-```typescript
-// Find yesterday's trip that may still be active
-const yesterdayDate = subtractDays(today, 1);
-const { data: yesterdayTrip } = await supabase
-  .from("trips")
-  .select("id, status, arrival_time")
-  .eq("schedule_id", schedule.id)
-  .eq("trip_date", yesterdayDate)
-  .maybeSingle();
-
-// For overnight services, check if yesterday's trip is done
-if (yesterdayTrip && yesterdayTrip.status === 'in_progress') {
-  const now = new Date();
-  const todayArrivalTime = parseTime(schedule.arrival_time);
-  
-  if (now < todayArrivalTime) {
-    // Bus hasn't arrived yet - skip creating new trip
-    console.log(`Skipping: Bus still en route from yesterday's trip`);
-    continue;
-  }
-}
-```
-
-3. Link trips when creating:
-```typescript
-// Link to previous trip if exists
-if (yesterdayTrip) {
-  tripData.previous_trip_id = yesterdayTrip.id;
-  
-  // Also update yesterday's trip with next_trip_id
-  await supabase
-    .from("trips")
-    .update({ next_trip_id: newTripId })
-    .eq("id", yesterdayTrip.id);
-}
-```
-
----
-
-## UI Enhancements
-
-### Schedule Form Visual Timeline
-
-Add a visual representation showing the overnight pattern:
-
-```text
-┌─────────────────────────────────────────────────────────────┐
-│  Day 1                    │  Day 2                          │
-│                           │                                 │
-│  20:15 ──────────────────── 06:00 (Outward)                │
-│                             09:00 ──────────── 18:00       │
-│                                                  (Return)   │
-│                             20:15 ──── ... (Next Cycle)    │
-└─────────────────────────────────────────────────────────────┘
-```
-
-### Trip Table Enhancements
-
-- Group consecutive trips visually
-- Show chain indicators (←→ icons)
-- Add "Cycle" column showing position
-
----
-
-## Files to Create
+### Files to Create
 
 | File | Purpose |
 |------|---------|
-| `src/components/TripChainIndicator.tsx` | Visual indicator for linked trips |
-| `src/components/ScheduleTimeline.tsx` | Visual timeline for schedule creation |
+| `src/pages/admin/Analytics.tsx` | Main analytics page component |
 
-## Files to Modify
+### Files to Modify
 
-| File | Changes |
-|------|---------|
-| `supabase/functions/generate-scheduled-trips/index.ts` | Add trip linking and overnight detection |
-| `src/pages/admin/ScheduleManagement.tsx` | Add overnight schedule options and visual timeline |
-| `src/pages/admin/TripManagement.tsx` | Show trip chains and linked trips |
-| `src/pages/driver/DriverTrips.tsx` | Show cycle context for drivers |
-| `src/components/TripTimeline.tsx` | Enhance to show multi-day context |
-| `src/types/database.ts` | Add new Trip fields |
+| File | Change |
+|------|--------|
+| `src/App.tsx` | Add route `/admin/analytics` |
+| `src/components/layout/Sidebar.tsx` | Add navigation link with BarChart3 icon |
+
+### Data Fetching Strategy
+
+The page will fetch data from existing tables using aggregation queries:
+
+```typescript
+// Revenue by payment source
+SELECT 
+  SUM(revenue_cash) as cash,
+  SUM(revenue_online) as online,
+  SUM(revenue_paytm) as paytm,
+  SUM(revenue_agent) as agent,
+  SUM(revenue_others) as others
+FROM trips WHERE status = 'completed' AND date_range
+
+// Daily revenue trend
+SELECT 
+  DATE(start_date) as date,
+  SUM(total_revenue) as revenue,
+  SUM(total_expense) as expense,
+  COUNT(*) as trips
+FROM trips GROUP BY DATE(start_date)
+
+// Expense breakdown
+SELECT 
+  ec.name, SUM(e.amount)
+FROM expenses e
+JOIN expense_categories ec ON e.category_id = ec.id
+WHERE e.status = 'approved'
+GROUP BY ec.name
+```
+
+### Key Features
+
+1. **Interactive Charts**: Using Recharts (already in the project)
+   - Tooltips with detailed information
+   - Click-to-filter functionality
+   - Responsive design
+
+2. **Date Range Filtering**: Reusable pattern from ProfitabilityReport
+   - Start/end date pickers
+   - Quick period selectors
+
+3. **Real-time Calculations**:
+   - Profit margins
+   - Growth percentages
+   - Period comparisons
+
+4. **Export Functionality**: Using ExcelJS (already installed)
+   - Multi-sheet workbook
+   - Formatted data tables
+
+### UI Components Used
+- Card, CardHeader, CardTitle, CardContent (existing)
+- Tabs, TabsList, TabsTrigger, TabsContent (for section navigation)
+- Recharts: BarChart, LineChart, PieChart, AreaChart, RadialBarChart
+- Badge for indicators
+- Skeleton for loading states
+
+---
+
+## Chart Components Detail
+
+### 1. Revenue Trend Line Chart
+```text
+     ₹50K |
+          |       ____
+     ₹40K |      /    \____
+          |     /          \
+     ₹30K |____/            \___
+          |________________________
+           Jan  Feb  Mar  Apr  May
+```
+
+### 2. Revenue Source Pie Chart
+```text
+        ┌─────────┐
+       /  Cash    \
+      │   45%     │
+      │   Online  │
+       \  35%    /
+        └─────────┘
+        Agent 15% | Others 5%
+```
+
+### 3. Bus Performance Bar Chart
+```text
+MH121454    ████████████████░░░  ₹4,920
+HR3829731   ████████████░░░░░░░  ₹3,900
+MP09BJ6966  ░░░░░░░░░░░░░░░░░░░  ₹0
+```
+
+### 4. Expense Category Breakdown
+```text
+Fuel     ████████████████  73%
+Toll     ████████          27%
+Food     ░░░░░░░░░░░░░░░░   0%
+```
+
+---
+
+## State Management
+
+```typescript
+interface AnalyticsState {
+  loading: boolean;
+  dateRange: { start: Date; end: Date };
+  
+  // KPIs
+  totalRevenue: number;
+  totalExpense: number;
+  profitMargin: number;
+  tripCompletionRate: number;
+  avgFuelEfficiency: number;
+  
+  // Trends
+  revenueTrend: { date: string; revenue: number; expense: number }[];
+  tripTrend: { date: string; count: number }[];
+  
+  // Breakdowns
+  revenueBySource: { source: string; amount: number }[];
+  expenseByCategory: { category: string; amount: number }[];
+  tripsByStatus: { status: string; count: number }[];
+  
+  // Performance
+  busPerformance: { name: string; revenue: number; profit: number; trips: number }[];
+  routePerformance: { name: string; revenue: number; trips: number }[];
+  driverPerformance: { name: string; revenue: number; trips: number }[];
+}
+```
+
+---
+
+## Analytics Calculations
+
+### Profit Margin
+```typescript
+const profitMargin = ((totalRevenue - totalExpense) / totalRevenue) * 100;
+```
+
+### Trip Completion Rate
+```typescript
+const completionRate = (completedTrips / totalScheduledTrips) * 100;
+```
+
+### Period Comparison (Growth)
+```typescript
+const revenueGrowth = ((currentPeriod - previousPeriod) / previousPeriod) * 100;
+```
+
+### Fuel Efficiency
+```typescript
+const efficiency = totalDistance / totalFuelLiters; // km/L
+```
+
+---
+
+## Responsive Design
+
+- Desktop: 4-column grid for KPIs, 2-column for charts
+- Tablet: 2-column grid
+- Mobile: Single column, stacked layout
+- Charts resize automatically using ResponsiveContainer
 
 ---
 
 ## Summary
 
-This solution:
+This Analytics page will provide:
+- **Visual insights** through interactive charts
+- **Trend analysis** for revenue, trips, and expenses
+- **Comparative views** across buses, routes, and drivers
+- **Actionable KPIs** for quick decision-making
+- **Export capability** for offline analysis
 
-1. **Prevents double-booking** by understanding overnight journeys
-2. **Links consecutive trips** for easy tracking
-3. **Shows clear visual context** for multi-day cycles
-4. **Handles the Delhi-Manali pattern** exactly as you described
-
-The system will understand that:
-- Departing at 20:15 PM means arriving at 06:00 AM **next day**
-- The return at 09:00 AM completes at 18:00 PM same day
-- The next cycle starts at 20:15 PM same day (after turnaround)
-- Each cycle spans 2 calendar days for the outward journey
-
+The page follows existing patterns in ProfitabilityReport and GSTReport, ensuring consistency in UI and data handling.
