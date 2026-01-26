@@ -1,14 +1,26 @@
+# BusManager - Fleet Management System
+# Robots.txt for multi-tenant subdomain deployments
+
 User-agent: Googlebot
 Allow: /
+Disallow: /admin/*
+Disallow: /driver/*
+Disallow: /repair/*
+Disallow: /dashboard
 
 User-agent: Bingbot
 Allow: /
-
-User-agent: Twitterbot
-Allow: /
-
-User-agent: facebookexternalhit
-Allow: /
+Disallow: /admin/*
+Disallow: /driver/*
+Disallow: /repair/*
+Disallow: /dashboard
 
 User-agent: *
 Allow: /
+Disallow: /admin/*
+Disallow: /driver/*
+Disallow: /repair/*
+Disallow: /dashboard
+
+# Sitemap (update domain per deployment)
+Sitemap: https://busmanager.in/sitemap.xml

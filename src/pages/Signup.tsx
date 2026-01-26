@@ -59,7 +59,7 @@ export default function Signup() {
             </div>
           </div>
           <CardTitle className="text-2xl">Create Account</CardTitle>
-          <CardDescription>Join Fleet Manager as a driver</CardDescription>
+          <CardDescription>Join BusManager to get started</CardDescription>
         </CardHeader>
         <form onSubmit={handleSubmit}>
           <CardContent className="space-y-4">
