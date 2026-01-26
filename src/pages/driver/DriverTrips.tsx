@@ -11,7 +11,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { Trip, TripStatus, StockItem } from '@/types/database';
-import { Loader2, Gauge, ArrowRight, ArrowLeft, Droplets, Play, CheckCircle } from 'lucide-react';
+import { Loader2, Gauge, ArrowRight, ArrowLeft, Droplets, Play, CheckCircle, Link } from 'lucide-react';
+import TripChainIndicator from '@/components/TripChainIndicator';
 import { toast } from 'sonner';
 
 export default function DriverTrips() {
@@ -398,7 +399,19 @@ export default function DriverTrips() {
                     
                     return (
                       <TableRow key={t.id}>
-                        <TableCell className="font-medium">{t.trip_number}</TableCell>
+                        <TableCell className="font-medium">
+                          <div className="flex flex-col gap-1">
+                            {t.trip_number}
+                            {((t as any).previous_trip_id || (t as any).next_trip_id) && (
+                              <TripChainIndicator
+                                previousTripId={(t as any).previous_trip_id}
+                                nextTripId={(t as any).next_trip_id}
+                                cyclePosition={(t as any).cycle_position || 1}
+                                compact
+                              />
+                            )}
+                          </div>
+                        </TableCell>
                         <TableCell>
                           <Badge variant={t.trip_type === 'two_way' ? 'default' : 'outline'}>
                             {t.trip_type === 'two_way' ? 'Two-Way' : 'One-Way'}

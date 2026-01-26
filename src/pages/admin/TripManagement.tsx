@@ -11,13 +11,14 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
 import { Trip, TripStatus, TripType, Bus, Profile, Route } from '@/types/database';
-import { Plus, Pencil, Loader2, Download, Eye, FileSpreadsheet, IndianRupee, Calendar, ArrowLeftRight, ArrowRight, ArrowLeft } from 'lucide-react';
+import { Plus, Pencil, Loader2, Download, Eye, FileSpreadsheet, IndianRupee, Calendar, ArrowLeftRight, ArrowRight, ArrowLeft, Link } from 'lucide-react';
 import { toast } from 'sonner';
 import { exportToExcel, formatCurrency, formatDate } from '@/lib/exportUtils';
 import { exportTripSheet, mapTripToSheetData } from '@/lib/tripSheetExport';
 import TripExpensesDialog from '@/components/TripExpensesDialog';
 import TripRevenueDialog from '@/components/TripRevenueDialog';
 import PeriodExportDialog from '@/components/PeriodExportDialog';
+import TripChainIndicator from '@/components/TripChainIndicator';
 import { useTableFilters } from '@/hooks/useTableFilters';
 import { SearchFilterBar, TablePagination } from '@/components/TableFilters';
 
@@ -26,6 +27,7 @@ export default function TripManagement() {
   const [buses, setBuses] = useState<Bus[]>([]);
   const [drivers, setDrivers] = useState<Profile[]>([]);
   const [busyDriverIds, setBusyDriverIds] = useState<Set<string>>(new Set());
+  const [busyBusIds, setBusyBusIds] = useState<Set<string>>(new Set());
   const [routes, setRoutes] = useState<Route[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -267,7 +269,21 @@ export default function TripManagement() {
     fetchDrivers();
     fetchRoutes();
     fetchBusyDrivers();
+    fetchBusyBuses();
   }, []);
+
+  async function fetchBusyBuses() {
+    // Get buses that have in_progress trips
+    const { data } = await supabase
+      .from('trips')
+      .select('bus_id')
+      .eq('status', 'in_progress');
+    
+    if (data) {
+      const busyIds = new Set(data.map(t => t.bus_id).filter(Boolean) as string[]);
+      setBusyBusIds(busyIds);
+    }
+  }
 
   async function fetchBusyDrivers() {
     // Get drivers who have in_progress trips
@@ -372,6 +388,22 @@ export default function TripManagement() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSubmitting(true);
+
+    // Check if bus is already on an in-progress trip
+    if (formData.bus_id && (formData.status === 'scheduled' || formData.status === 'in_progress')) {
+      const { data: existingBusTrips } = await supabase
+        .from('trips')
+        .select('id, trip_number')
+        .eq('bus_id', formData.bus_id)
+        .eq('status', 'in_progress')
+        .neq('id', editingTrip?.id || '');
+      
+      if (existingBusTrips && existingBusTrips.length > 0) {
+        toast.error(`Bus is already on trip ${existingBusTrips[0].trip_number}. Complete that trip first before scheduling a new one.`);
+        setSubmitting(false);
+        return;
+      }
+    }
 
     // Check if driver is already on an in-progress trip (skip if editing the same trip or if status is not scheduled/in_progress)
     if (formData.driver_id && (formData.status === 'scheduled' || formData.status === 'in_progress')) {
@@ -524,11 +556,19 @@ export default function TripManagement() {
                         <SelectValue placeholder="Select bus" />
                       </SelectTrigger>
                       <SelectContent>
-                        {buses.map((bus) => (
-                          <SelectItem key={bus.id} value={bus.id}>
-                            {bus.registration_number} {bus.bus_name && `(${bus.bus_name})`}
-                          </SelectItem>
-                        ))}
+                        {buses.map((bus) => {
+                          const isBusy = busyBusIds.has(bus.id) && editingTrip?.bus_id !== bus.id;
+                          return (
+                            <SelectItem 
+                              key={bus.id} 
+                              value={bus.id}
+                              disabled={isBusy}
+                            >
+                              {bus.registration_number} {bus.bus_name && `(${bus.bus_name})`}
+                              {isBusy && <span className="text-muted-foreground ml-2">(On Trip)</span>}
+                            </SelectItem>
+                          );
+                        })}
                       </SelectContent>
                     </Select>
                   </div>
@@ -755,7 +795,19 @@ export default function TripManagement() {
                     
                     return (
                       <TableRow key={trip.id}>
-                        <TableCell className="font-medium">{trip.trip_number}</TableCell>
+                        <TableCell className="font-medium">
+                          <div className="flex items-center gap-2">
+                            {trip.trip_number}
+                            {((trip as any).previous_trip_id || (trip as any).next_trip_id) && (
+                              <TripChainIndicator
+                                previousTripId={(trip as any).previous_trip_id}
+                                nextTripId={(trip as any).next_trip_id}
+                                cyclePosition={(trip as any).cycle_position || 1}
+                                compact
+                              />
+                            )}
+                          </div>
+                        </TableCell>
                         <TableCell>
                           <Badge variant={trip.trip_type === 'two_way' ? 'default' : 'outline'}>
                             {trip.trip_type === 'two_way' ? (

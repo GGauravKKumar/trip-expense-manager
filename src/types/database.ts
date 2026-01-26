@@ -87,6 +87,11 @@ export interface Trip {
   status: TripStatus;
   notes: string | null;
   trip_type: TripType;
+  // Trip chain fields
+  previous_trip_id: string | null;
+  next_trip_id: string | null;
+  cycle_position: number;
+  expected_arrival_date: string | null;
   // Snapshot fields for deleted bus/driver
   bus_name_snapshot: string | null;
   driver_name_snapshot: string | null;
@@ -171,6 +176,10 @@ export interface BusSchedule {
   return_arrival_time: string | null;
   is_active: boolean;
   notes: string | null;
+  // Overnight journey fields
+  is_overnight: boolean;
+  arrival_next_day: boolean;
+  turnaround_hours: number;
   created_at: string;
   updated_at: string;
   bus?: Bus;

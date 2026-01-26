@@ -43,6 +43,7 @@ export type Database = {
       }
       bus_schedules: {
         Row: {
+          arrival_next_day: boolean | null
           arrival_time: string
           bus_id: string
           created_at: string
@@ -51,14 +52,17 @@ export type Database = {
           driver_id: string | null
           id: string
           is_active: boolean
+          is_overnight: boolean | null
           is_two_way: boolean
           notes: string | null
           return_arrival_time: string | null
           return_departure_time: string | null
           route_id: string
+          turnaround_hours: number | null
           updated_at: string
         }
         Insert: {
+          arrival_next_day?: boolean | null
           arrival_time: string
           bus_id: string
           created_at?: string
@@ -67,14 +71,17 @@ export type Database = {
           driver_id?: string | null
           id?: string
           is_active?: boolean
+          is_overnight?: boolean | null
           is_two_way?: boolean
           notes?: string | null
           return_arrival_time?: string | null
           return_departure_time?: string | null
           route_id: string
+          turnaround_hours?: number | null
           updated_at?: string
         }
         Update: {
+          arrival_next_day?: boolean | null
           arrival_time?: string
           bus_id?: string
           created_at?: string
@@ -83,11 +90,13 @@ export type Database = {
           driver_id?: string | null
           id?: string
           is_active?: boolean
+          is_overnight?: boolean | null
           is_two_way?: boolean
           notes?: string | null
           return_arrival_time?: string | null
           return_departure_time?: string | null
           route_id?: string
+          turnaround_hours?: number | null
           updated_at?: string
         }
         Relationships: [
@@ -1000,19 +1009,23 @@ export type Database = {
           bus_id: string | null
           bus_name_snapshot: string | null
           created_at: string
+          cycle_position: number | null
           departure_time: string | null
           distance_return: number | null
           distance_traveled: number | null
           driver_id: string | null
           driver_name_snapshot: string | null
           end_date: string | null
+          expected_arrival_date: string | null
           gst_percentage: number | null
           id: string
+          next_trip_id: string | null
           notes: string | null
           odometer_end: number | null
           odometer_return_end: number | null
           odometer_return_start: number | null
           odometer_start: number | null
+          previous_trip_id: string | null
           return_arrival_time: string | null
           return_departure_time: string | null
           return_revenue_agent: number | null
@@ -1044,19 +1057,23 @@ export type Database = {
           bus_id?: string | null
           bus_name_snapshot?: string | null
           created_at?: string
+          cycle_position?: number | null
           departure_time?: string | null
           distance_return?: number | null
           distance_traveled?: number | null
           driver_id?: string | null
           driver_name_snapshot?: string | null
           end_date?: string | null
+          expected_arrival_date?: string | null
           gst_percentage?: number | null
           id?: string
+          next_trip_id?: string | null
           notes?: string | null
           odometer_end?: number | null
           odometer_return_end?: number | null
           odometer_return_start?: number | null
           odometer_start?: number | null
+          previous_trip_id?: string | null
           return_arrival_time?: string | null
           return_departure_time?: string | null
           return_revenue_agent?: number | null
@@ -1088,19 +1105,23 @@ export type Database = {
           bus_id?: string | null
           bus_name_snapshot?: string | null
           created_at?: string
+          cycle_position?: number | null
           departure_time?: string | null
           distance_return?: number | null
           distance_traveled?: number | null
           driver_id?: string | null
           driver_name_snapshot?: string | null
           end_date?: string | null
+          expected_arrival_date?: string | null
           gst_percentage?: number | null
           id?: string
+          next_trip_id?: string | null
           notes?: string | null
           odometer_end?: number | null
           odometer_return_end?: number | null
           odometer_return_start?: number | null
           odometer_start?: number | null
+          previous_trip_id?: string | null
           return_arrival_time?: string | null
           return_departure_time?: string | null
           return_revenue_agent?: number | null
@@ -1147,6 +1168,20 @@ export type Database = {
             columns: ["driver_id"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trips_next_trip_id_fkey"
+            columns: ["next_trip_id"]
+            isOneToOne: false
+            referencedRelation: "trips"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trips_previous_trip_id_fkey"
+            columns: ["previous_trip_id"]
+            isOneToOne: false
+            referencedRelation: "trips"
             referencedColumns: ["id"]
           },
           {

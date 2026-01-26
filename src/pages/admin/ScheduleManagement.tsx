@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -22,10 +22,11 @@ import {
 } from '@/components/ui/alert-dialog';
 import { supabase } from '@/integrations/supabase/client';
 import { Bus, Route, Profile, BusSchedule } from '@/types/database';
-import { Plus, Pencil, Loader2, Trash2, Calendar, Clock, ArrowLeftRight, Play } from 'lucide-react';
+import { Plus, Pencil, Loader2, Trash2, Calendar, Clock, ArrowLeftRight, Play, Moon } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTableFilters } from '@/hooks/useTableFilters';
 import { SearchFilterBar, TablePagination } from '@/components/TableFilters';
+import ScheduleTimeline from '@/components/ScheduleTimeline';
 
 const DAYS_OF_WEEK = [
   { value: 'monday', label: 'Mon' },
@@ -36,6 +37,15 @@ const DAYS_OF_WEEK = [
   { value: 'saturday', label: 'Sat' },
   { value: 'sunday', label: 'Sun' },
 ];
+
+// Helper function to detect overnight journeys
+function isOvernightJourney(departureTime: string, arrivalTime: string): boolean {
+  const [depHour, depMin] = departureTime.split(':').map(Number);
+  const [arrHour, arrMin] = arrivalTime.split(':').map(Number);
+  const depMinutes = depHour * 60 + depMin;
+  const arrMinutes = arrHour * 60 + arrMin;
+  return arrMinutes < depMinutes;
+}
 
 export default function ScheduleManagement() {
   const [schedules, setSchedules] = useState<BusSchedule[]>([]);
@@ -59,6 +69,19 @@ export default function ScheduleManagement() {
     notes: '',
   });
   const [submitting, setSubmitting] = useState(false);
+
+  // Detect overnight journeys based on form data
+  const isOutwardOvernight = useMemo(() => 
+    isOvernightJourney(formData.departure_time, formData.arrival_time),
+    [formData.departure_time, formData.arrival_time]
+  );
+  
+  const isReturnOvernight = useMemo(() => 
+    formData.is_two_way && formData.return_departure_time && formData.return_arrival_time
+      ? isOvernightJourney(formData.return_departure_time, formData.return_arrival_time)
+      : false,
+    [formData.is_two_way, formData.return_departure_time, formData.return_arrival_time]
+  );
 
   // Delete state
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -474,6 +497,32 @@ export default function ScheduleManagement() {
                   </div>
                 )}
 
+                {/* Overnight Journey Indicator */}
+                {(isOutwardOvernight || isReturnOvernight) && (
+                  <div className="p-3 bg-blue-50 dark:bg-blue-950 rounded-lg border border-blue-200 dark:border-blue-800">
+                    <div className="flex items-center gap-2 text-blue-700 dark:text-blue-300 mb-2">
+                      <Moon className="h-4 w-4" />
+                      <span className="font-medium text-sm">Overnight Journey Detected</span>
+                    </div>
+                    <p className="text-xs text-blue-600 dark:text-blue-400">
+                      {isOutwardOvernight && 'The outward journey spans midnight (arrives next day). '}
+                      {isReturnOvernight && 'The return journey spans midnight (arrives next day). '}
+                      Trips will be linked automatically to prevent double-booking.
+                    </p>
+                  </div>
+                )}
+
+                {/* Visual Timeline Preview */}
+                {formData.departure_time && formData.arrival_time && (
+                  <ScheduleTimeline
+                    departureTime={formData.departure_time}
+                    arrivalTime={formData.arrival_time}
+                    isTwoWay={formData.is_two_way}
+                    returnDepartureTime={formData.return_departure_time}
+                    returnArrivalTime={formData.return_arrival_time}
+                  />
+                )}
+
                 <div className="space-y-2">
                   <Label htmlFor="notes">Notes</Label>
                   <Input
@@ -568,7 +617,16 @@ export default function ScheduleManagement() {
                       <TableCell>
                         <div className="flex items-center gap-1">
                           <Clock className="h-3 w-3" />
-                          {schedule.departure_time}
+                          <span>{schedule.departure_time}</span>
+                          {isOvernightJourney(schedule.departure_time, schedule.arrival_time) && (
+                            <span title="Overnight journey"><Moon className="h-3 w-3 text-blue-500 ml-1" /></span>
+                          )}
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          → {schedule.arrival_time}
+                          {isOvernightJourney(schedule.departure_time, schedule.arrival_time) && (
+                            <span className="text-blue-500 ml-1">(+1 day)</span>
+                          )}
                         </div>
                       </TableCell>
                       <TableCell>
