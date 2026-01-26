@@ -20,6 +20,7 @@ import {
   Building2,
   Wrench,
   FileText,
+  IndianRupee,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useState } from 'react';
@@ -37,6 +38,7 @@ const adminLinks = [
   { href: '/admin/repair-organizations', label: 'Repair Orgs', icon: Building2 },
   { href: '/admin/repair-records', label: 'Repair Records', icon: Wrench },
   { href: '/admin/profitability', label: 'Profitability', icon: TrendingUp },
+  { href: '/admin/gst-report', label: 'GST Report', icon: IndianRupee },
   { href: '/admin/settings', label: 'Settings', icon: Settings },
 ];
 
