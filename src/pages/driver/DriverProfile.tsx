@@ -126,6 +126,7 @@ export default function DriverProfile() {
                   value={formData.phone}
                   onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                   placeholder="+91 98765 43210"
+                  maxLength={15}
                 />
               </div>
 

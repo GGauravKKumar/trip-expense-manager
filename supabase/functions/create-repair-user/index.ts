@@ -95,6 +95,14 @@ Deno.serve(async (req) => {
       );
     }
 
+    // Validate phone length
+    if (phone && phone.length > 15) {
+      return new Response(
+        JSON.stringify({ error: "Phone number must be 15 characters or less" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     // Verify organization exists
     const { data: orgData, error: orgError } = await supabaseAdmin
       .from("repair_organizations")

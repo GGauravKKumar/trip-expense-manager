@@ -90,6 +90,14 @@ Deno.serve(async (req) => {
       });
     }
 
+    // Validate phone length
+    if (body.phone && body.phone.length > 15) {
+      return new Response(JSON.stringify({ error: 'Phone number must be 15 characters or less' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     // Create the user using admin API
     const { data: newUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
       email: body.email,
