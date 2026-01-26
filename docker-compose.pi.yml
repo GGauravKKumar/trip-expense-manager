@@ -1,0 +1,142 @@
+# BusManager - Ultra-Light Setup for Raspberry Pi 4B (2GB)
+# Run with: docker compose -f docker-compose.pi.yml up -d
+#
+# ⚠️ This config removes Studio, Meta, and Realtime to save ~800MB RAM
+# Minimum RAM: 1.5GB free (use swap for safety)
+
+version: "3.8"
+
+services:
+  # PostgreSQL Database
+  db:
+    image: postgres:15-alpine
+    container_name: busmanager-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-your-super-secret-password}
+      POSTGRES_DB: postgres
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      - ./docker/init-db.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    # Memory limit for Pi
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 128M
+
+  # Supabase Auth (GoTrue)
+  auth:
+    image: supabase/gotrue:v2.143.0
+    container_name: busmanager-auth
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      GOTRUE_API_HOST: 0.0.0.0
+      GOTRUE_API_PORT: 9999
+      API_EXTERNAL_URL: ${API_EXTERNAL_URL:-http://localhost:8000}
+      GOTRUE_DB_DRIVER: postgres
+      GOTRUE_DB_DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:-your-super-secret-password}@db:5432/postgres?search_path=auth
+      GOTRUE_SITE_URL: ${SITE_URL:-http://localhost:5173}
+      GOTRUE_URI_ALLOW_LIST: "*"
+      GOTRUE_DISABLE_SIGNUP: "false"
+      GOTRUE_JWT_ADMIN_ROLES: service_role
+      GOTRUE_JWT_AUD: authenticated
+      GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
+      GOTRUE_JWT_EXP: 3600
+      GOTRUE_JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-token-with-at-least-32-characters}
+      GOTRUE_EXTERNAL_EMAIL_ENABLED: "true"
+      GOTRUE_MAILER_AUTOCONFIRM: "true"
+      GOTRUE_SMTP_ADMIN_EMAIL: admin@localhost
+      GOTRUE_SMTP_HOST: ""
+      GOTRUE_SMTP_PORT: ""
+      GOTRUE_SMTP_SENDER_NAME: BusManager
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+        reservations:
+          memory: 64M
+
+  # Supabase REST API (PostgREST)
+  rest:
+    image: postgrest/postgrest:v12.0.2
+    container_name: busmanager-rest
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGRST_DB_URI: postgres://postgres:${POSTGRES_PASSWORD:-your-super-secret-password}@db:5432/postgres
+      PGRST_DB_SCHEMAS: public,storage
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-token-with-at-least-32-characters}
+      PGRST_DB_USE_LEGACY_GUCS: "false"
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+        reservations:
+          memory: 32M
+
+  # Kong API Gateway
+  kong:
+    image: kong:2.8.1
+    container_name: busmanager-kong
+    restart: unless-stopped
+    depends_on:
+      - auth
+      - rest
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /var/lib/kong/kong.yml
+      KONG_DNS_ORDER: LAST,A,CNAME
+      KONG_PLUGINS: request-transformer,cors,key-auth,acl
+      KONG_NGINX_PROXY_PROXY_BUFFER_SIZE: 160k
+      KONG_NGINX_PROXY_PROXY_BUFFERS: 64 160k
+    volumes:
+      - ./docker/kong.yml:/var/lib/kong/kong.yml:ro
+    ports:
+      - "8000:8000"
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+        reservations:
+          memory: 64M
+
+  # BusManager Frontend (nginx serving static files - very light)
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: busmanager-frontend
+    restart: unless-stopped
+    depends_on:
+      - kong
+    environment:
+      VITE_SUPABASE_URL: ${API_EXTERNAL_URL:-http://localhost:8000}
+      VITE_SUPABASE_PUBLISHABLE_KEY: ${ANON_KEY:-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1sb2NhbCIsInJvbGUiOiJhbm9uIiwiaWF0IjoxNjQ1MTkyODI0LCJleHAiOjE5NjA3Njg4MjR9.M5W6bBHF6e8hDSqwrO2hJGcOjYt7EEPsqoANnxh8mys}
+      VITE_SUPABASE_PROJECT_ID: local
+    ports:
+      - "5173:80"
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+        reservations:
+          memory: 32M
+
+volumes:
+  db-data:
