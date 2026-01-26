@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -13,6 +13,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { Trip, TripStatus, StockItem } from '@/types/database';
 import { Loader2, Gauge, ArrowRight, ArrowLeft, Droplets, Play, CheckCircle, Link } from 'lucide-react';
 import TripChainIndicator from '@/components/TripChainIndicator';
+import DateRangeFilter, { DatePreset, getDefaultWeekRange } from '@/components/DateRangeFilter';
 import { toast } from 'sonner';
 
 export default function DriverTrips() {
@@ -31,6 +32,27 @@ export default function DriverTrips() {
     return_start: '',
     return_end: '',
   });
+
+  // Date filter state - default to weekly
+  const defaultRange = getDefaultWeekRange();
+  const [datePreset, setDatePreset] = useState<DatePreset>('week');
+  const [startDate, setStartDate] = useState<Date | undefined>(defaultRange.start);
+  const [endDate, setEndDate] = useState<Date | undefined>(defaultRange.end);
+
+  // Filter trips by date range
+  const filteredTrips = useMemo(() => {
+    if (!startDate && !endDate) return trips;
+    
+    return trips.filter((trip) => {
+      const tripDate = new Date(trip.start_date);
+      const startCheck = startDate ? new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate()) : null;
+      const endCheck = endDate ? new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate(), 23, 59, 59, 999) : null;
+      
+      if (startCheck && tripDate < startCheck) return false;
+      if (endCheck && tripDate > endCheck) return false;
+      return true;
+    });
+  }, [trips, startDate, endDate]);
 
   useEffect(() => { 
     if (user) {
@@ -361,7 +383,19 @@ export default function DriverTrips() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <h1 className="text-2xl font-bold">My Trips</h1>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <h1 className="text-2xl font-bold">My Trips</h1>
+          <DateRangeFilter
+            startDate={startDate}
+            endDate={endDate}
+            onDateChange={(start, end) => {
+              setStartDate(start);
+              setEndDate(end);
+            }}
+            preset={datePreset}
+            onPresetChange={setDatePreset}
+          />
+        </div>
         <Card>
           <CardContent className="p-0">
             <Table>
@@ -385,14 +419,14 @@ export default function DriverTrips() {
                       <Loader2 className="h-6 w-6 animate-spin mx-auto" />
                     </TableCell>
                   </TableRow>
-                ) : trips.length === 0 ? (
+                ) : filteredTrips.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
-                      No trips assigned
+                      {trips.length === 0 ? 'No trips assigned' : 'No trips found for selected period'}
                     </TableCell>
                   </TableRow>
                 ) : (
-                  trips.map((t) => {
+                  filteredTrips.map((t) => {
                     const outwardDistance = Number(t.distance_traveled) || 0;
                     const returnDistance = Number(t.distance_return) || 0;
                     const totalDistance = outwardDistance + returnDistance;
