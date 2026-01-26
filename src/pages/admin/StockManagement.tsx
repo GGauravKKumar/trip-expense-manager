@@ -43,6 +43,7 @@ export default function StockManagement() {
     low_stock_threshold: 50,
     unit: 'pieces',
     unit_price: 0,
+    gst_percentage: 0,
     notes: '',
   });
   const [updateData, setUpdateData] = useState({
@@ -118,7 +119,7 @@ export default function StockManagement() {
     }
   }
 
-  function handleEdit(item: StockItem & { unit_price?: number }) {
+  function handleEdit(item: StockItem) {
     setEditingItem(item);
     setFormData({
       item_name: item.item_name,
@@ -126,6 +127,7 @@ export default function StockManagement() {
       low_stock_threshold: item.low_stock_threshold,
       unit: item.unit,
       unit_price: item.unit_price || 0,
+      gst_percentage: item.gst_percentage || 0,
       notes: item.notes || '',
     });
     setDialogOpen(true);
@@ -139,6 +141,7 @@ export default function StockManagement() {
       low_stock_threshold: 50,
       unit: 'pieces',
       unit_price: 0,
+      gst_percentage: 0,
       notes: '',
     });
     setDialogOpen(true);
@@ -177,6 +180,7 @@ export default function StockManagement() {
       low_stock_threshold: formData.low_stock_threshold,
       unit: formData.unit,
       unit_price: formData.unit_price,
+      gst_percentage: formData.gst_percentage,
       notes: formData.notes || null,
       last_updated_by: profile?.id || null,
     };
@@ -381,6 +385,20 @@ export default function StockManagement() {
                     />
                     <p className="text-xs text-muted-foreground">Cost per unit</p>
                   </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="gst_percentage">GST Rate (%)</Label>
+                  <Input
+                    id="gst_percentage"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    max="28"
+                    value={formData.gst_percentage}
+                    onChange={(e) => setFormData({ ...formData, gst_percentage: parseFloat(e.target.value) || 0 })}
+                  />
+                  <p className="text-xs text-muted-foreground">GST rate for this item (0 if exempt)</p>
                 </div>
 
                 <div className="space-y-2">

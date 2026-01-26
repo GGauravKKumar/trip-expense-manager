@@ -23,6 +23,9 @@ interface RepairRecord {
   labor_cost: number;
   parts_cost: number;
   total_cost: number;
+  gst_amount: number;
+  gst_applicable: boolean;
+  gst_percentage: number;
   photo_before_url: string | null;
   photo_after_url: string | null;
   warranty_days: number;
@@ -325,7 +328,7 @@ export default function RepairRecords() {
                 </div>
               )}
 
-              <div className="grid gap-4 md:grid-cols-3">
+              <div className="grid gap-4 md:grid-cols-4">
                 <div>
                   <p className="text-sm text-muted-foreground">Labor Cost</p>
                   <p className="font-medium">₹{selectedRecord.labor_cost?.toLocaleString('en-IN')}</p>
@@ -333,6 +336,14 @@ export default function RepairRecords() {
                 <div>
                   <p className="text-sm text-muted-foreground">Parts Cost</p>
                   <p className="font-medium">₹{selectedRecord.parts_cost?.toLocaleString('en-IN')}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">GST Amount</p>
+                  {selectedRecord.gst_applicable ? (
+                    <p className="font-medium text-blue-600">₹{(selectedRecord.gst_amount || 0).toLocaleString('en-IN')}</p>
+                  ) : (
+                    <Badge variant="outline" className="text-xs">N/A</Badge>
+                  )}
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground">Total Cost</p>

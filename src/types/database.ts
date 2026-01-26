@@ -193,10 +193,47 @@ export interface StockItem {
   quantity: number;
   low_stock_threshold: number;
   unit: string;
+  unit_price: number | null;
+  gst_percentage: number;
   notes: string | null;
   last_updated_by: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface RepairRecord {
+  id: string;
+  repair_number: string;
+  organization_id: string;
+  bus_id: string | null;
+  bus_registration: string;
+  repair_date: string;
+  repair_type: string;
+  description: string;
+  parts_changed: string | null;
+  labor_cost: number;
+  parts_cost: number;
+  total_cost: number;
+  gst_amount: number;
+  gst_applicable: boolean;
+  gst_percentage: number;
+  photo_before_url: string | null;
+  photo_after_url: string | null;
+  warranty_days: number;
+  notes: string | null;
+  status: string;
+  submitted_by: string | null;
+  approved_by: string | null;
+  approved_at: string | null;
+  created_at: string;
+  updated_at: string;
+  repair_organizations?: {
+    org_code: string;
+    org_name: string;
+  };
+  buses?: {
+    bus_name: string | null;
+  };
 }
 
 export interface StockTransaction {

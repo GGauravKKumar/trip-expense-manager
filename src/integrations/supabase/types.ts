@@ -726,6 +726,9 @@ export type Database = {
           bus_registration: string
           created_at: string
           description: string
+          gst_amount: number | null
+          gst_applicable: boolean | null
+          gst_percentage: number | null
           id: string
           labor_cost: number | null
           notes: string | null
@@ -750,6 +753,9 @@ export type Database = {
           bus_registration: string
           created_at?: string
           description: string
+          gst_amount?: number | null
+          gst_applicable?: boolean | null
+          gst_percentage?: number | null
           id?: string
           labor_cost?: number | null
           notes?: string | null
@@ -774,6 +780,9 @@ export type Database = {
           bus_registration?: string
           created_at?: string
           description?: string
+          gst_amount?: number | null
+          gst_applicable?: boolean | null
+          gst_percentage?: number | null
           id?: string
           labor_cost?: number | null
           notes?: string | null
@@ -908,6 +917,7 @@ export type Database = {
       stock_items: {
         Row: {
           created_at: string
+          gst_percentage: number | null
           id: string
           item_name: string
           last_updated_by: string | null
@@ -920,6 +930,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          gst_percentage?: number | null
           id?: string
           item_name: string
           last_updated_by?: string | null
@@ -932,6 +943,7 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          gst_percentage?: number | null
           id?: string
           item_name?: string
           last_updated_by?: string | null
