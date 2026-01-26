@@ -71,10 +71,10 @@ export default function TripExpensesDialog({
     setLoading(false);
   }
 
-  function handleExport() {
+  async function handleExport() {
     if (expenses.length === 0) return;
 
-    exportToExcel(
+    await exportToExcel(
       expenses,
       [
         { header: 'Category', key: 'category', format: (v) => v?.name || '-' },

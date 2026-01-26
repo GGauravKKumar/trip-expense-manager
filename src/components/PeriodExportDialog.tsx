@@ -151,7 +151,7 @@ export default function PeriodExportDialog({ open, onOpenChange }: PeriodExportD
       }));
 
       const filename = `fleet-trip-sheet-${periodType}-${new Date().toISOString().slice(0, 10)}`;
-      exportPeriodTripSheet(busData, label, filename);
+      await exportPeriodTripSheet(busData, label, filename);
       toast.success('Fleet Trip Sheet downloaded successfully!');
       onOpenChange(false);
     } catch (error) {
