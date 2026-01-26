@@ -22,6 +22,7 @@ import AdminSettings from "@/pages/admin/Settings";
 import RepairOrganizations from "@/pages/admin/RepairOrganizations";
 import RepairRecords from "@/pages/admin/RepairRecords";
 import InvoiceManagement from "@/pages/admin/InvoiceManagement";
+import Analytics from "@/pages/admin/Analytics";
 import DriverDashboard from "@/pages/driver/DriverDashboard";
 import DriverTrips from "@/pages/driver/DriverTrips";
 import DriverExpenses from "@/pages/driver/DriverExpenses";
@@ -58,6 +59,7 @@ const App = () => (
             <Route path="/admin/settings" element={<ProtectedRoute requiredRole="admin"><AdminSettings /></ProtectedRoute>} />
             <Route path="/admin/repair-organizations" element={<ProtectedRoute requiredRole="admin"><RepairOrganizations /></ProtectedRoute>} />
             <Route path="/admin/repair-records" element={<ProtectedRoute requiredRole="admin"><RepairRecords /></ProtectedRoute>} />
+            <Route path="/admin/analytics" element={<ProtectedRoute requiredRole="admin"><Analytics /></ProtectedRoute>} />
             {/* Driver Routes */}
             <Route path="/driver" element={<ProtectedRoute requiredRole="driver"><DriverDashboard /></ProtectedRoute>} />
             <Route path="/driver/trips" element={<ProtectedRoute requiredRole="driver"><DriverTrips /></ProtectedRoute>} />
