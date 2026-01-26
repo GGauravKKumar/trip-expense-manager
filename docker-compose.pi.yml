@@ -90,6 +90,35 @@ services:
         reservations:
           memory: 32M
 
+  # Supabase Storage (for expense docs & repair photos)
+  storage:
+    image: supabase/storage-api:v0.43.11
+    container_name: busmanager-storage
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      ANON_KEY: ${ANON_KEY:-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1sb2NhbCIsInJvbGUiOiJhbm9uIiwiaWF0IjoxNjQ1MTkyODI0LCJleHAiOjE5NjA3Njg4MjR9.M5W6bBHF6e8hDSqwrO2hJGcOjYt7EEPsqoANnxh8mys}
+      SERVICE_KEY: ${SERVICE_ROLE_KEY:-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1sb2NhbCIsInJvbGUiOiJzZXJ2aWNlX3JvbGUiLCJpYXQiOjE2NDUxOTI4MjQsImV4cCI6MTk2MDc2ODgyNH0.0dQ-vqfLYHGMSvqYiSfQNoAVnmv0KPdqS6TMxY4BYVI}
+      POSTGREST_URL: http://rest:3000
+      PGRST_JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-token-with-at-least-32-characters}
+      DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:-your-super-secret-password}@db:5432/postgres
+      FILE_SIZE_LIMIT: 10485760
+      STORAGE_BACKEND: file
+      FILE_STORAGE_BACKEND_PATH: /var/lib/storage
+      TENANT_ID: stub
+      REGION: stub
+      GLOBAL_S3_BUCKET: stub
+    volumes:
+      - storage-data:/var/lib/storage
+    deploy:
+      resources:
+        limits:
+          memory: 96M
+        reservations:
+          memory: 48M
+
   # Kong API Gateway
   kong:
     image: kong:2.8.1
@@ -98,6 +127,7 @@ services:
     depends_on:
       - auth
       - rest
+      - storage
     environment:
       KONG_DATABASE: "off"
       KONG_DECLARATIVE_CONFIG: /var/lib/kong/kong.yml
@@ -140,3 +170,4 @@ services:
 
 volumes:
   db-data:
+  storage-data:
