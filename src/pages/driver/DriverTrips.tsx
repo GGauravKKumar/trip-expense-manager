@@ -118,7 +118,10 @@ export default function DriverTrips() {
 
     // Handle two-way trip return journey
     if (selectedTrip.trip_type === 'two_way') {
-      const returnStart = odometerData.return_start ? parseFloat(odometerData.return_start) : null;
+      // Use odometer_end as default for return_start if not explicitly set
+      const returnStart = odometerData.return_start 
+        ? parseFloat(odometerData.return_start) 
+        : (odometerData.end ? parseFloat(odometerData.end) : null);
       const returnEnd = odometerData.return_end ? parseFloat(odometerData.return_end) : null;
 
       if (returnStart !== null && returnEnd !== null && returnEnd < returnStart) {
@@ -549,16 +552,26 @@ export default function DriverTrips() {
                   )}
                 </TabsContent>
                 <TabsContent value="return" className="space-y-4">
+                  {odometerData.end && !odometerData.return_start && (
+                    <div className="p-2 bg-muted rounded-lg text-sm text-muted-foreground">
+                      Return start auto-filled from outward end reading. You can edit if needed.
+                    </div>
+                  )}
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label htmlFor="return_start">Start (km)</Label>
                       <Input
                         id="return_start"
                         type="number"
-                        value={odometerData.return_start}
+                        value={odometerData.return_start || odometerData.end}
                         onChange={(e) => setOdometerData({ ...odometerData, return_start: e.target.value })}
                         placeholder="e.g., 45350"
                       />
+                      {odometerData.end && !odometerData.return_start && (
+                        <p className="text-xs text-muted-foreground">
+                          Same as outward end ({odometerData.end} km)
+                        </p>
+                      )}
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="return_end">End (km)</Label>
@@ -571,10 +584,10 @@ export default function DriverTrips() {
                       />
                     </div>
                   </div>
-                  {calculateDistance(odometerData.return_start, odometerData.return_end) !== null && (
+                  {calculateDistance(odometerData.return_start || odometerData.end, odometerData.return_end) !== null && (
                     <div className="p-3 bg-blue-500/10 rounded-lg">
                       <p className="text-sm font-medium text-blue-700">
-                        Return Distance: {calculateDistance(odometerData.return_start, odometerData.return_end)} km
+                        Return Distance: {calculateDistance(odometerData.return_start || odometerData.end, odometerData.return_end)} km
                       </p>
                     </div>
                   )}
@@ -620,7 +633,7 @@ export default function DriverTrips() {
                 <p className="text-sm font-medium">
                   Total Distance: {
                     (calculateDistance(odometerData.start, odometerData.end) || 0) +
-                    (calculateDistance(odometerData.return_start, odometerData.return_end) || 0)
+                    (calculateDistance(odometerData.return_start || odometerData.end, odometerData.return_end) || 0)
                   } km
                 </p>
               </div>
