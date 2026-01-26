@@ -29,7 +29,6 @@ import { useState } from 'react';
 const adminLinks = [
   { href: '/admin', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/admin/buses', label: 'Buses', icon: Bus },
-  { href: '/admin/drivers', label: 'Drivers', icon: Users },
   { href: '/admin/routes', label: 'Routes', icon: Route },
   { href: '/admin/schedules', label: 'Schedules', icon: Calendar },
   { href: '/admin/trips', label: 'Trips', icon: MapPin },
@@ -40,6 +39,7 @@ const adminLinks = [
   { href: '/admin/repair-records', label: 'Repair Records', icon: Wrench },
   { href: '/admin/profitability', label: 'Profitability', icon: TrendingUp },
   { href: '/admin/gst-report', label: 'GST Report', icon: IndianRupee },
+  { href: '/admin/drivers', label: 'Users', icon: Users },
   { href: '/admin/analytics', label: 'Analytics', icon: BarChart3 },
   { href: '/admin/settings', label: 'Settings', icon: Settings },
 ];
