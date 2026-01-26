@@ -64,8 +64,8 @@ export default function Login() {
               <Bus className="h-8 w-8 text-primary" />
             </div>
           </div>
-          <CardTitle className="text-2xl">Fleet Manager</CardTitle>
-          <CardDescription>Sign in to your account</CardDescription>
+          <CardTitle className="text-2xl">BusManager</CardTitle>
+          <CardDescription>Sign in to manage your fleet</CardDescription>
         </CardHeader>
         
         {isLockedOut() && (
