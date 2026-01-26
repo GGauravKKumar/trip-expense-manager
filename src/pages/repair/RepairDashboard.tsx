@@ -60,6 +60,8 @@ const defaultFormData = {
   parts_cost: '',
   warranty_days: '0',
   notes: '',
+  gst_applicable: true,
+  gst_amount: '',
 };
 
 interface ProfileWithRepairOrg {
@@ -257,6 +259,8 @@ export default function RepairDashboard() {
         photo_before_url: photoBeforeUrl,
         photo_after_url: photoAfterUrl,
         submitted_by: profile.id,
+        gst_applicable: formData.gst_applicable,
+        gst_amount: formData.gst_applicable ? (parseFloat(formData.gst_amount) || 0) : 0,
       });
 
       if (error) throw error;
@@ -457,6 +461,47 @@ export default function RepairDashboard() {
                       placeholder="0"
                     />
                   </div>
+                </div>
+
+                {/* GST Section */}
+                <div className="space-y-4 p-4 border rounded-lg bg-muted/30">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="gst_applicable" className="font-medium">GST Applicable</Label>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        id="gst_applicable"
+                        className="sr-only peer"
+                        checked={formData.gst_applicable}
+                        onChange={(e) => setFormData((prev) => ({ 
+                          ...prev, 
+                          gst_applicable: e.target.checked,
+                          gst_amount: e.target.checked ? prev.gst_amount : ''
+                        }))}
+                      />
+                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                    </label>
+                  </div>
+                  
+                  {formData.gst_applicable && (
+                    <div className="space-y-2">
+                      <Label htmlFor="gst_amount">GST Amount (₹)</Label>
+                      <Input
+                        id="gst_amount"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={formData.gst_amount}
+                        onChange={(e) => setFormData((prev) => ({ ...prev, gst_amount: e.target.value }))}
+                        placeholder="Enter GST amount from bill"
+                      />
+                      <p className="text-xs text-muted-foreground">Enter the GST amount as shown on your bill</p>
+                    </div>
+                  )}
+                  
+                  {!formData.gst_applicable && (
+                    <p className="text-xs text-muted-foreground">No GST will be recorded for this repair</p>
+                  )}
                 </div>
 
                 {/* Photo Uploads */}

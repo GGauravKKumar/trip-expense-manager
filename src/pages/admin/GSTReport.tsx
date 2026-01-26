@@ -19,7 +19,9 @@ import { PieChart as RechartsPie, Pie, Cell, ResponsiveContainer, Legend, Toolti
 interface GSTSummary {
   period: string;
   outputGST: number; // GST collected from revenue
-  inputGST: number;  // GST on expenses (estimated)
+  inputGST: number;  // GST from repairs & stock
+  repairGST: number; // GST from approved repair records
+  stockGST: number;  // GST from stock used in trips
   netGST: number;    // Output - Input
   totalRevenue: number;
   totalExpenses: number;
@@ -53,6 +55,8 @@ export default function GSTReport() {
     period: '',
     outputGST: 0,
     inputGST: 0,
+    repairGST: 0,
+    stockGST: 0,
     netGST: 0,
     totalRevenue: 0,
     totalExpenses: 0,
@@ -107,10 +111,71 @@ export default function GSTReport() {
     await Promise.all([
       fetchInvoiceGST(),
       fetchTripGST(),
-      fetchExpenseGST(),
     ]);
 
+    // Fetch input GST after trips are loaded (need trip data for stock calculation)
+    await fetchInputGST();
+
     setLoading(false);
+  }
+
+  async function fetchInputGST() {
+    // 1. GST from approved repair records
+    const { data: repairData } = await supabase
+      // @ts-ignore - table exists after migration
+      .from('repair_records')
+      .select('gst_amount, gst_applicable')
+      .eq('status', 'approved')
+      .eq('gst_applicable', true)
+      .gte('repair_date', startDate)
+      .lte('repair_date', endDate);
+    
+    const repairGST = repairData?.reduce((sum: number, r: { gst_amount: number | null }) => 
+      sum + (Number(r.gst_amount) || 0), 0) || 0;
+
+    // 2. GST from stock used in trips (water)
+    const { data: tripData } = await supabase
+      .from('trips')
+      .select('water_taken')
+      .eq('status', 'completed')
+      .gte('start_date', startDate)
+      .lte('start_date', endDate);
+    
+    // Fetch stock item GST rate for water
+    const { data: stockItem } = await supabase
+      .from('stock_items')
+      .select('unit_price, gst_percentage')
+      .ilike('item_name', '%water%')
+      .maybeSingle();
+    
+    const waterTaken = tripData?.reduce((sum: number, t: { water_taken: number | null }) => 
+      sum + (Number(t.water_taken) || 0), 0) || 0;
+    const stockGSTRate = (stockItem?.gst_percentage || 0) / 100;
+    const stockValue = waterTaken * (stockItem?.unit_price || 0);
+    // Calculate GST from inclusive price: GST = value * rate / (1 + rate)
+    const stockGST = stockGSTRate > 0 ? stockValue * stockGSTRate / (1 + stockGSTRate) : 0;
+
+    // Total Input GST
+    const totalInputGST = repairGST + stockGST;
+    
+    // Calculate output GST from invoices and trips
+    const invoiceGST = invoices.reduce((sum, inv) => sum + Number(inv.gst_amount), 0);
+    const tripGSTTotal = tripGST.reduce((sum, trip) => sum + trip.gst_amount, 0);
+    const outputGST = invoiceGST + tripGSTTotal;
+    
+    const totalRevenue = invoices.reduce((sum, inv) => sum + Number(inv.total_amount), 0) +
+                         tripGST.reduce((sum, trip) => sum + trip.total_revenue, 0);
+
+    setSummary({
+      period: `${format(new Date(startDate), 'dd MMM yyyy')} - ${format(new Date(endDate), 'dd MMM yyyy')}`,
+      outputGST,
+      inputGST: totalInputGST,
+      repairGST,
+      stockGST,
+      netGST: outputGST - totalInputGST,
+      totalRevenue,
+      totalExpenses: 0, // No longer tracking driver expenses for GST
+    });
   }
 
   async function fetchInvoiceGST() {
@@ -152,41 +217,11 @@ export default function GSTReport() {
     }
   }
 
-  async function fetchExpenseGST() {
-    // Fetch approved expenses for input GST estimation
-    const { data: expenses } = await supabase
-      .from('expenses')
-      .select('amount')
-      .eq('status', 'approved')
-      .gte('expense_date', startDate)
-      .lte('expense_date', endDate);
-
-    const totalExpenses = expenses?.reduce((sum, e) => sum + Number(e.amount), 0) || 0;
-    
-    // Calculate totals
-    const invoiceGST = invoices.reduce((sum, inv) => sum + Number(inv.gst_amount), 0);
-    const tripGSTTotal = tripGST.reduce((sum, trip) => sum + trip.gst_amount, 0);
-    const outputGST = invoiceGST + tripGSTTotal;
-    
-    // Estimate input GST (assumed 18% on certain expense categories like fuel, repairs)
-    const estimatedInputGST = totalExpenses * 0.15; // Approximate 15% average GST on expenses
-    
-    const totalRevenue = invoices.reduce((sum, inv) => sum + Number(inv.total_amount), 0) +
-                         tripGST.reduce((sum, trip) => sum + trip.total_revenue, 0);
-
-    setSummary({
-      period: `${format(new Date(startDate), 'dd MMM yyyy')} - ${format(new Date(endDate), 'dd MMM yyyy')}`,
-      outputGST,
-      inputGST: estimatedInputGST,
-      netGST: outputGST - estimatedInputGST,
-      totalRevenue,
-      totalExpenses,
-    });
-  }
+  // Removed fetchExpenseGST - Input GST now calculated from repairs & stock in fetchInputGST
 
   useEffect(() => {
     if (invoices.length > 0 || tripGST.length > 0) {
-      fetchExpenseGST();
+      fetchInputGST();
     }
   }, [invoices, tripGST, startDate, endDate]);
 
@@ -361,7 +396,17 @@ export default function GSTReport() {
                   <div className="text-2xl font-bold text-red-600">
                     {formatCurrency(summary.inputGST)}
                   </div>
-                  <p className="text-xs text-muted-foreground">Estimated from expenses</p>
+                  <p className="text-xs text-muted-foreground">From repairs & stock</p>
+                  <div className="mt-2 text-xs space-y-1">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Repairs:</span>
+                      <span>{formatCurrency(summary.repairGST)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Stock:</span>
+                      <span>{formatCurrency(summary.stockGST)}</span>
+                    </div>
+                  </div>
                 </CardContent>
               </Card>
 
@@ -458,8 +503,12 @@ export default function GSTReport() {
                   </div>
                   
                   <div className="p-3 bg-muted rounded-lg text-xs text-muted-foreground">
-                    <p><strong>Note:</strong> Input GST is estimated based on expense categories. 
-                    Actual ITC claims should be verified against GST invoices.</p>
+                    <p><strong>Input GST Breakdown:</strong></p>
+                    <ul className="mt-1 space-y-1">
+                      <li>• Repair Bills: {formatCurrency(summary.repairGST)}</li>
+                      <li>• Stock (Water): {formatCurrency(summary.stockGST)}</li>
+                    </ul>
+                    <p className="mt-2"><strong>Note:</strong> Input GST is calculated from approved repair records and stock items used in trips.</p>
                   </div>
                 </CardContent>
               </Card>
