@@ -18,10 +18,11 @@ import { PieChart as RechartsPie, Pie, Cell, ResponsiveContainer, Legend, Toolti
 
 interface GSTSummary {
   period: string;
-  outputGST: number; // GST collected from revenue
-  inputGST: number;  // GST from repairs & stock
+  outputGST: number; // GST collected from revenue (sales invoices + trips)
+  inputGST: number;  // GST paid (purchase invoices + repairs + stock)
   repairGST: number; // GST from approved repair records
   stockGST: number;  // GST from stock used in trips
+  purchaseInvoiceGST: number; // GST from purchase invoices
   netGST: number;    // Output - Input
   totalRevenue: number;
   totalExpenses: number;
@@ -57,6 +58,7 @@ export default function GSTReport() {
     inputGST: 0,
     repairGST: 0,
     stockGST: 0,
+    purchaseInvoiceGST: 0,
     netGST: 0,
     totalRevenue: 0,
     totalExpenses: 0,
@@ -122,7 +124,6 @@ export default function GSTReport() {
   async function fetchInputGST() {
     // 1. GST from approved repair records
     const { data: repairData } = await supabase
-      // @ts-ignore - table exists after migration
       .from('repair_records')
       .select('gst_amount, gst_applicable')
       .eq('status', 'approved')
@@ -155,13 +156,26 @@ export default function GSTReport() {
     // Calculate GST from inclusive price: GST = value * rate / (1 + rate)
     const stockGST = stockGSTRate > 0 ? stockValue * stockGSTRate / (1 + stockGSTRate) : 0;
 
-    // Total Input GST
-    const totalInputGST = repairGST + stockGST;
+    // 3. GST from purchase invoices (direction = 'purchase')
+    const { data: purchaseInvoices } = await supabase
+      .from('invoices')
+      .select('gst_amount')
+      .eq('direction', 'purchase')
+      .gte('invoice_date', startDate)
+      .lte('invoice_date', endDate)
+      .neq('status', 'cancelled');
     
-    // Calculate output GST from invoices and trips
-    const invoiceGST = invoices.reduce((sum, inv) => sum + Number(inv.gst_amount), 0);
+    const purchaseInvoiceGST = purchaseInvoices?.reduce((sum: number, inv: { gst_amount: number }) => 
+      sum + (Number(inv.gst_amount) || 0), 0) || 0;
+
+    // Total Input GST (repairs + stock + purchase invoices)
+    const totalInputGST = repairGST + stockGST + purchaseInvoiceGST;
+    
+    // Calculate output GST from sales invoices and trips only
+    // Filter invoices to only include sales (direction = 'sales' or null for legacy)
+    const salesInvoiceGST = invoices.reduce((sum, inv) => sum + Number(inv.gst_amount), 0);
     const tripGSTTotal = tripGST.reduce((sum, trip) => sum + trip.gst_amount, 0);
-    const outputGST = invoiceGST + tripGSTTotal;
+    const outputGST = salesInvoiceGST + tripGSTTotal;
     
     const totalRevenue = invoices.reduce((sum, inv) => sum + Number(inv.total_amount), 0) +
                          tripGST.reduce((sum, trip) => sum + trip.total_revenue, 0);
@@ -172,6 +186,7 @@ export default function GSTReport() {
       inputGST: totalInputGST,
       repairGST,
       stockGST,
+      purchaseInvoiceGST,
       netGST: outputGST - totalInputGST,
       totalRevenue,
       totalExpenses: 0, // No longer tracking driver expenses for GST
@@ -179,9 +194,11 @@ export default function GSTReport() {
   }
 
   async function fetchInvoiceGST() {
+    // Only fetch sales invoices for output GST calculation
     const { data } = await supabase
       .from('invoices')
-      .select('id, invoice_number, customer_name, invoice_date, subtotal, gst_amount, total_amount')
+      .select('id, invoice_number, customer_name, invoice_date, subtotal, gst_amount, total_amount, direction')
+      .or('direction.eq.sales,direction.is.null') // Include legacy invoices without direction
       .gte('invoice_date', startDate)
       .lte('invoice_date', endDate)
       .neq('status', 'cancelled')
@@ -396,8 +413,12 @@ export default function GSTReport() {
                   <div className="text-2xl font-bold text-red-600">
                     {formatCurrency(summary.inputGST)}
                   </div>
-                  <p className="text-xs text-muted-foreground">From repairs & stock</p>
+                  <p className="text-xs text-muted-foreground">From purchases, repairs & stock</p>
                   <div className="mt-2 text-xs space-y-1">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Purchase Invoices:</span>
+                      <span>{formatCurrency(summary.purchaseInvoiceGST)}</span>
+                    </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Repairs:</span>
                       <span>{formatCurrency(summary.repairGST)}</span>
@@ -505,10 +526,11 @@ export default function GSTReport() {
                   <div className="p-3 bg-muted rounded-lg text-xs text-muted-foreground">
                     <p><strong>Input GST Breakdown:</strong></p>
                     <ul className="mt-1 space-y-1">
+                      <li>• Purchase Invoices: {formatCurrency(summary.purchaseInvoiceGST)}</li>
                       <li>• Repair Bills: {formatCurrency(summary.repairGST)}</li>
                       <li>• Stock (Water): {formatCurrency(summary.stockGST)}</li>
                     </ul>
-                    <p className="mt-2"><strong>Note:</strong> Input GST is calculated from approved repair records and stock items used in trips.</p>
+                    <p className="mt-2"><strong>Note:</strong> Input GST is calculated from purchase invoices, approved repair records, and stock items used in trips.</p>
                   </div>
                 </CardContent>
               </Card>

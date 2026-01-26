@@ -507,11 +507,13 @@ export type Database = {
           amount_paid: number
           balance_due: number
           bus_id: string | null
+          category: Database["public"]["Enums"]["invoice_category"] | null
           created_at: string
           customer_address: string | null
           customer_gst: string | null
           customer_name: string
           customer_phone: string | null
+          direction: Database["public"]["Enums"]["invoice_direction"] | null
           due_date: string | null
           gst_amount: number
           id: string
@@ -525,16 +527,22 @@ export type Database = {
           total_amount: number
           trip_id: string | null
           updated_at: string
+          vendor_address: string | null
+          vendor_gst: string | null
+          vendor_name: string | null
+          vendor_phone: string | null
         }
         Insert: {
           amount_paid?: number
           balance_due?: number
           bus_id?: string | null
+          category?: Database["public"]["Enums"]["invoice_category"] | null
           created_at?: string
           customer_address?: string | null
           customer_gst?: string | null
           customer_name: string
           customer_phone?: string | null
+          direction?: Database["public"]["Enums"]["invoice_direction"] | null
           due_date?: string | null
           gst_amount?: number
           id?: string
@@ -548,16 +556,22 @@ export type Database = {
           total_amount?: number
           trip_id?: string | null
           updated_at?: string
+          vendor_address?: string | null
+          vendor_gst?: string | null
+          vendor_name?: string | null
+          vendor_phone?: string | null
         }
         Update: {
           amount_paid?: number
           balance_due?: number
           bus_id?: string | null
+          category?: Database["public"]["Enums"]["invoice_category"] | null
           created_at?: string
           customer_address?: string | null
           customer_gst?: string | null
           customer_name?: string
           customer_phone?: string | null
+          direction?: Database["public"]["Enums"]["invoice_direction"] | null
           due_date?: string | null
           gst_amount?: number
           id?: string
@@ -571,6 +585,10 @@ export type Database = {
           total_amount?: number
           trip_id?: string | null
           updated_at?: string
+          vendor_address?: string | null
+          vendor_gst?: string | null
+          vendor_name?: string | null
+          vendor_phone?: string | null
         }
         Relationships: [
           {
@@ -1303,6 +1321,17 @@ export type Database = {
       app_role: "admin" | "driver" | "repair_org"
       bus_status: "active" | "maintenance" | "inactive"
       expense_status: "pending" | "approved" | "denied"
+      invoice_category:
+        | "general"
+        | "fuel"
+        | "repairs"
+        | "spares"
+        | "office_supplies"
+        | "insurance"
+        | "permits"
+        | "tolls"
+        | "other"
+      invoice_direction: "sales" | "purchase"
       invoice_status:
         | "draft"
         | "sent"
@@ -1445,6 +1474,18 @@ export const Constants = {
       app_role: ["admin", "driver", "repair_org"],
       bus_status: ["active", "maintenance", "inactive"],
       expense_status: ["pending", "approved", "denied"],
+      invoice_category: [
+        "general",
+        "fuel",
+        "repairs",
+        "spares",
+        "office_supplies",
+        "insurance",
+        "permits",
+        "tolls",
+        "other",
+      ],
+      invoice_direction: ["sales", "purchase"],
       invoice_status: [
         "draft",
         "sent",
