@@ -6,10 +6,10 @@ import { Separator } from '@/components/ui/separator';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { supabase } from '@/integrations/supabase/client';
-import { Loader2, Edit, FileText } from 'lucide-react';
+import { Loader2, Edit, FileText, ArrowUpRight, ArrowDownLeft } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
-import { Invoice, InvoiceStatus, InvoiceLineItem, InvoicePayment } from '@/pages/admin/InvoiceManagement';
+import { Invoice, InvoiceStatus, InvoiceLineItem, InvoicePayment, INVOICE_CATEGORIES, INVOICE_STATUS_CONFIG } from '@/types/invoice';
 
 interface Props {
   invoice: Invoice;
@@ -68,28 +68,16 @@ export default function InvoiceDetailDialog({ invoice, open, onOpenChange, onEdi
   }
 
   function getStatusBadge(status: InvoiceStatus) {
-    const variants: Record<InvoiceStatus, 'default' | 'secondary' | 'destructive' | 'outline'> = {
-      draft: 'secondary',
-      sent: 'outline',
-      partial: 'default',
-      paid: 'default',
-      overdue: 'destructive',
-      cancelled: 'destructive',
-    };
-    const colors: Record<InvoiceStatus, string> = {
-      draft: '',
-      sent: '',
-      partial: 'bg-yellow-500',
-      paid: 'bg-green-500',
-      overdue: '',
-      cancelled: '',
-    };
+    const config = INVOICE_STATUS_CONFIG[status];
     return (
-      <Badge variant={variants[status]} className={colors[status]}>
-        {status.charAt(0).toUpperCase() + status.slice(1)}
+      <Badge variant={config.variant} className={config.className}>
+        {config.label}
       </Badge>
     );
   }
+
+  const isSales = (invoice.direction || 'sales') === 'sales';
+  const categoryLabel = INVOICE_CATEGORIES.find(c => c.value === invoice.category)?.label || invoice.category;
 
   const regularItems = lineItems.filter((item) => !item.is_deduction);
   const deductionItems = lineItems.filter((item) => item.is_deduction);
@@ -100,10 +88,15 @@ export default function InvoiceDetailDialog({ invoice, open, onOpenChange, onEdi
         <DialogHeader>
           <div className="flex items-center justify-between">
             <DialogTitle className="flex items-center gap-2">
-              <FileText className="h-5 w-5" />
-              Invoice {invoice.invoice_number}
+              {isSales ? (
+                <ArrowUpRight className="h-5 w-5 text-green-500" />
+              ) : (
+                <ArrowDownLeft className="h-5 w-5 text-red-500" />
+              )}
+              {isSales ? 'Sales' : 'Purchase'} Invoice {invoice.invoice_number}
             </DialogTitle>
             <div className="flex items-center gap-2">
+              <Badge variant="outline">{categoryLabel}</Badge>
               {getStatusBadge(invoice.status)}
               <Button variant="outline" size="sm" onClick={onEdit}>
                 <Edit className="h-4 w-4 mr-1" />
@@ -119,14 +112,28 @@ export default function InvoiceDetailDialog({ invoice, open, onOpenChange, onEdi
           </div>
         ) : (
           <div className="space-y-6">
-            {/* Customer Info */}
+            {/* Party Info */}
             <div className="grid gap-4 md:grid-cols-2">
               <div>
-                <h4 className="font-medium text-sm text-muted-foreground mb-1">Customer</h4>
-                <p className="font-medium">{invoice.customer_name}</p>
-                {invoice.customer_address && <p className="text-sm text-muted-foreground">{invoice.customer_address}</p>}
-                {invoice.customer_phone && <p className="text-sm text-muted-foreground">{invoice.customer_phone}</p>}
-                {invoice.customer_gst && <p className="text-sm text-muted-foreground">GST: {invoice.customer_gst}</p>}
+                <h4 className="font-medium text-sm text-muted-foreground mb-1">
+                  {isSales ? 'Customer' : 'Vendor'}
+                </h4>
+                <p className="font-medium">
+                  {isSales ? invoice.customer_name : (invoice.vendor_name || invoice.customer_name)}
+                </p>
+                {isSales ? (
+                  <>
+                    {invoice.customer_address && <p className="text-sm text-muted-foreground">{invoice.customer_address}</p>}
+                    {invoice.customer_phone && <p className="text-sm text-muted-foreground">{invoice.customer_phone}</p>}
+                    {invoice.customer_gst && <p className="text-sm text-muted-foreground">GST: {invoice.customer_gst}</p>}
+                  </>
+                ) : (
+                  <>
+                    {invoice.vendor_address && <p className="text-sm text-muted-foreground">{invoice.vendor_address}</p>}
+                    {invoice.vendor_phone && <p className="text-sm text-muted-foreground">{invoice.vendor_phone}</p>}
+                    {invoice.vendor_gst && <p className="text-sm text-muted-foreground">GST: {invoice.vendor_gst}</p>}
+                  </>
+                )}
               </div>
               <div className="text-right">
                 <div className="text-sm text-muted-foreground">
@@ -137,9 +144,11 @@ export default function InvoiceDetailDialog({ invoice, open, onOpenChange, onEdi
                     Due Date: <span className="font-medium text-foreground">{format(new Date(invoice.due_date), 'dd MMM yyyy')}</span>
                   </div>
                 )}
-                <div className="text-sm text-muted-foreground">
-                  Type: <Badge variant="outline" className="ml-1">{invoice.invoice_type}</Badge>
-                </div>
+                {isSales && (
+                  <div className="text-sm text-muted-foreground">
+                    Type: <Badge variant="outline" className="ml-1">{invoice.invoice_type}</Badge>
+                  </div>
+                )}
               </div>
             </div>
 

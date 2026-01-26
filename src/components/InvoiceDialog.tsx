@@ -7,9 +7,16 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { supabase } from '@/integrations/supabase/client';
-import { Loader2, Plus, Trash2 } from 'lucide-react';
+import { Loader2, Plus, Trash2, ArrowUpRight, ArrowDownLeft } from 'lucide-react';
 import { toast } from 'sonner';
-import { Invoice, InvoiceType, InvoiceLineItem } from '@/pages/admin/InvoiceManagement';
+import { 
+  Invoice, 
+  InvoiceType, 
+  InvoiceLineItem,
+  InvoiceDirection,
+  InvoiceCategory,
+  INVOICE_CATEGORIES
+} from '@/types/invoice';
 
 interface LineItemForm {
   id?: string;
@@ -25,27 +32,38 @@ interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   invoice?: Invoice | null;
+  direction: InvoiceDirection;
   onSuccess: () => void;
 }
 
-export default function InvoiceDialog({ open, onOpenChange, invoice, onSuccess }: Props) {
+export default function InvoiceDialog({ open, onOpenChange, invoice, direction, onSuccess }: Props) {
   const [loading, setLoading] = useState(false);
   const [loadingItems, setLoadingItems] = useState(false);
   const [formData, setFormData] = useState({
     invoice_number: '',
     invoice_date: new Date().toISOString().split('T')[0],
     due_date: '',
+    // For sales
     customer_name: '',
     customer_address: '',
     customer_phone: '',
     customer_gst: '',
+    // For purchase
+    vendor_name: '',
+    vendor_address: '',
+    vendor_phone: '',
+    vendor_gst: '',
+    // Common
     invoice_type: 'customer' as InvoiceType,
+    category: 'general' as InvoiceCategory,
     notes: '',
     terms: '',
   });
   const [lineItems, setLineItems] = useState<LineItemForm[]>([
     { description: '', quantity: 1, unit_price: 0, is_deduction: false, gst_percentage: 18, rate_includes_gst: false },
   ]);
+
+  const isSales = direction === 'sales';
 
   useEffect(() => {
     if (open && invoice) {
@@ -54,11 +72,16 @@ export default function InvoiceDialog({ open, onOpenChange, invoice, onSuccess }
         invoice_number: invoice.invoice_number,
         invoice_date: invoice.invoice_date,
         due_date: invoice.due_date || '',
-        customer_name: invoice.customer_name,
+        customer_name: invoice.customer_name || '',
         customer_address: invoice.customer_address || '',
         customer_phone: invoice.customer_phone || '',
         customer_gst: invoice.customer_gst || '',
+        vendor_name: invoice.vendor_name || '',
+        vendor_address: invoice.vendor_address || '',
+        vendor_phone: invoice.vendor_phone || '',
+        vendor_gst: invoice.vendor_gst || '',
         invoice_type: invoice.invoice_type,
+        category: invoice.category || 'general',
         notes: invoice.notes || '',
         terms: invoice.terms || '',
       });
@@ -73,7 +96,12 @@ export default function InvoiceDialog({ open, onOpenChange, invoice, onSuccess }
         customer_address: '',
         customer_phone: '',
         customer_gst: '',
+        vendor_name: '',
+        vendor_address: '',
+        vendor_phone: '',
+        vendor_gst: '',
         invoice_type: 'customer',
+        category: 'general',
         notes: '',
         terms: '',
       });
@@ -99,8 +127,8 @@ export default function InvoiceDialog({ open, onOpenChange, invoice, onSuccess }
           quantity: item.quantity,
           unit_price: item.unit_price,
           is_deduction: item.is_deduction,
-          gst_percentage: (item as any).gst_percentage ?? 18,
-          rate_includes_gst: (item as any).rate_includes_gst ?? false,
+          gst_percentage: item.gst_percentage ?? 18,
+          rate_includes_gst: item.rate_includes_gst ?? false,
         }))
       );
     }
@@ -127,12 +155,10 @@ export default function InvoiceDialog({ open, onOpenChange, invoice, onSuccess }
     const rawAmount = item.quantity * item.unit_price;
     
     if (item.rate_includes_gst) {
-      // Rate includes GST, so extract base amount and GST
       const baseAmount = rawAmount / (1 + item.gst_percentage / 100);
       const gstAmount = rawAmount - baseAmount;
       return { baseAmount, gstAmount, totalAmount: rawAmount };
     } else {
-      // Rate excludes GST, so calculate GST on top
       const gstAmount = rawAmount * (item.gst_percentage / 100);
       return { baseAmount: rawAmount, gstAmount, totalAmount: rawAmount + gstAmount };
     }
@@ -166,25 +192,27 @@ export default function InvoiceDialog({ open, onOpenChange, invoice, onSuccess }
   async function generateInvoiceNumber(): Promise<string> {
     const date = new Date();
     const dateStr = date.toISOString().slice(2, 10).replace(/-/g, '');
+    const prefix = isSales ? 'INV' : 'PUR';
     
-    // Get count of invoices for today
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
     
     const { count } = await supabase
       .from('invoices')
       .select('*', { count: 'exact', head: true })
+      .eq('direction', direction)
       .gte('created_at', todayStart.toISOString());
     
     const sequence = ((count || 0) + 1).toString().padStart(3, '0');
-    return `INV${dateStr}${sequence}`;
+    return `${prefix}${dateStr}${sequence}`;
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
 
-    if (!formData.customer_name) {
-      toast.error('Customer name is required');
+    const partyName = isSales ? formData.customer_name : formData.vendor_name;
+    if (!partyName) {
+      toast.error(isSales ? 'Customer name is required' : 'Vendor name is required');
       return;
     }
 
@@ -205,11 +233,16 @@ export default function InvoiceDialog({ open, onOpenChange, invoice, onSuccess }
           .update({
             invoice_date: formData.invoice_date,
             due_date: formData.due_date || null,
-            customer_name: formData.customer_name,
+            customer_name: formData.customer_name || formData.vendor_name,
             customer_address: formData.customer_address || null,
             customer_phone: formData.customer_phone || null,
             customer_gst: formData.customer_gst || null,
+            vendor_name: formData.vendor_name || null,
+            vendor_address: formData.vendor_address || null,
+            vendor_phone: formData.vendor_phone || null,
+            vendor_gst: formData.vendor_gst || null,
             invoice_type: formData.invoice_type,
+            category: formData.category,
             subtotal,
             gst_amount: gstAmount,
             total_amount: totalAmount,
@@ -249,7 +282,7 @@ export default function InvoiceDialog({ open, onOpenChange, invoice, onSuccess }
 
         toast.success('Invoice updated successfully');
       } else {
-        // Create new invoice - use provided number or auto-generate
+        // Create new invoice
         const invoiceNumber = formData.invoice_number.trim() || await generateInvoiceNumber();
 
         const { data: newInvoice, error: invoiceError } = await supabase
@@ -258,10 +291,16 @@ export default function InvoiceDialog({ open, onOpenChange, invoice, onSuccess }
             invoice_number: invoiceNumber,
             invoice_date: formData.invoice_date,
             due_date: formData.due_date || null,
-            customer_name: formData.customer_name,
+            direction,
+            category: formData.category,
+            customer_name: formData.customer_name || formData.vendor_name,
             customer_address: formData.customer_address || null,
             customer_phone: formData.customer_phone || null,
             customer_gst: formData.customer_gst || null,
+            vendor_name: formData.vendor_name || null,
+            vendor_address: formData.vendor_address || null,
+            vendor_phone: formData.vendor_phone || null,
+            vendor_gst: formData.vendor_gst || null,
             invoice_type: formData.invoice_type,
             subtotal,
             gst_amount: gstAmount,
@@ -301,7 +340,7 @@ export default function InvoiceDialog({ open, onOpenChange, invoice, onSuccess }
           if (itemsError) throw itemsError;
         }
 
-        toast.success(`Invoice ${invoiceNumber} created successfully`);
+        toast.success(`${isSales ? 'Sales' : 'Purchase'} invoice ${invoiceNumber} created`);
       }
 
       onOpenChange(false);
@@ -321,47 +360,66 @@ export default function InvoiceDialog({ open, onOpenChange, invoice, onSuccess }
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{invoice ? 'Edit Invoice' : 'Create New Invoice'}</DialogTitle>
+          <DialogTitle className="flex items-center gap-2">
+            {isSales ? (
+              <ArrowUpRight className="h-5 w-5 text-green-500" />
+            ) : (
+              <ArrowDownLeft className="h-5 w-5 text-red-500" />
+            )}
+            {invoice ? 'Edit' : 'Create'} {isSales ? 'Sales' : 'Purchase'} Invoice
+          </DialogTitle>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Customer Details */}
+          {/* Party Details */}
           <div className="space-y-4">
-            <h3 className="font-medium">Customer Details</h3>
+            <h3 className="font-medium">{isSales ? 'Customer Details' : 'Vendor Details'}</h3>
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="customer_name">Customer Name *</Label>
+                <Label htmlFor="party_name">{isSales ? 'Customer' : 'Vendor'} Name *</Label>
                 <Input
-                  id="customer_name"
-                  value={formData.customer_name}
-                  onChange={(e) => setFormData({ ...formData, customer_name: e.target.value })}
+                  id="party_name"
+                  value={isSales ? formData.customer_name : formData.vendor_name}
+                  onChange={(e) => setFormData({ 
+                    ...formData, 
+                    [isSales ? 'customer_name' : 'vendor_name']: e.target.value 
+                  })}
                   required
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="customer_phone">Phone</Label>
+                <Label htmlFor="party_phone">Phone</Label>
                 <Input
-                  id="customer_phone"
-                  value={formData.customer_phone}
-                  onChange={(e) => setFormData({ ...formData, customer_phone: e.target.value })}
+                  id="party_phone"
+                  value={isSales ? formData.customer_phone : formData.vendor_phone}
+                  onChange={(e) => setFormData({ 
+                    ...formData, 
+                    [isSales ? 'customer_phone' : 'vendor_phone']: e.target.value 
+                  })}
                 />
               </div>
             </div>
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="customer_address">Address</Label>
+                <Label htmlFor="party_address">Address</Label>
                 <Input
-                  id="customer_address"
-                  value={formData.customer_address}
-                  onChange={(e) => setFormData({ ...formData, customer_address: e.target.value })}
+                  id="party_address"
+                  value={isSales ? formData.customer_address : formData.vendor_address}
+                  onChange={(e) => setFormData({ 
+                    ...formData, 
+                    [isSales ? 'customer_address' : 'vendor_address']: e.target.value 
+                  })}
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="customer_gst">GST Number</Label>
+                <Label htmlFor="party_gst">GST Number</Label>
                 <Input
-                  id="customer_gst"
-                  value={formData.customer_gst}
-                  onChange={(e) => setFormData({ ...formData, customer_gst: e.target.value })}
+                  id="party_gst"
+                  value={isSales ? formData.customer_gst : formData.vendor_gst}
+                  onChange={(e) => setFormData({ 
+                    ...formData, 
+                    [isSales ? 'customer_gst' : 'vendor_gst']: e.target.value 
+                  })}
                 />
               </div>
             </div>
@@ -370,7 +428,7 @@ export default function InvoiceDialog({ open, onOpenChange, invoice, onSuccess }
           {/* Invoice Details */}
           <div className="space-y-4">
             <h3 className="font-medium">Invoice Details</h3>
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid gap-4 md:grid-cols-3">
               <div className="space-y-2">
                 <Label htmlFor="invoice_number">Invoice Number</Label>
                 <Input
@@ -382,21 +440,41 @@ export default function InvoiceDialog({ open, onOpenChange, invoice, onSuccess }
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="invoice_type">Invoice Type *</Label>
+                <Label htmlFor="category">Category *</Label>
                 <Select
-                  value={formData.invoice_type}
-                  onValueChange={(value: InvoiceType) => setFormData({ ...formData, invoice_type: value })}
+                  value={formData.category}
+                  onValueChange={(value: InvoiceCategory) => setFormData({ ...formData, category: value })}
                 >
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="customer">Customer</SelectItem>
-                    <SelectItem value="online_app">Online App</SelectItem>
-                    <SelectItem value="charter">Charter</SelectItem>
+                    {INVOICE_CATEGORIES.map(cat => (
+                      <SelectItem key={cat.value} value={cat.value}>
+                        {cat.label}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
+              {isSales && (
+                <div className="space-y-2">
+                  <Label htmlFor="invoice_type">Invoice Type *</Label>
+                  <Select
+                    value={formData.invoice_type}
+                    onValueChange={(value: InvoiceType) => setFormData({ ...formData, invoice_type: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="customer">Customer</SelectItem>
+                      <SelectItem value="online_app">Online App</SelectItem>
+                      <SelectItem value="charter">Charter</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
             </div>
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
@@ -438,7 +516,7 @@ export default function InvoiceDialog({ open, onOpenChange, invoice, onSuccess }
             ) : (
               <div className="space-y-4">
                 {lineItems.map((item, index) => {
-                  const { baseAmount, gstAmount, totalAmount: lineTotal } = calculateLineItemAmounts(item);
+                  const { baseAmount, gstAmount: lineGst, totalAmount: lineTotal } = calculateLineItemAmounts(item);
                   return (
                     <div
                       key={index}
@@ -530,7 +608,7 @@ export default function InvoiceDialog({ open, onOpenChange, invoice, onSuccess }
                           <span className={`font-medium ${item.is_deduction ? 'text-destructive' : ''}`}>
                             {item.is_deduction ? '- ' : ''}
                             Base: ₹{baseAmount.toLocaleString('en-IN', { maximumFractionDigits: 2 })} + 
-                            GST: ₹{gstAmount.toLocaleString('en-IN', { maximumFractionDigits: 2 })} = 
+                            GST: ₹{lineGst.toLocaleString('en-IN', { maximumFractionDigits: 2 })} = 
                             <span className="font-bold ml-1">₹{lineTotal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
                           </span>
                         </div>
@@ -591,7 +669,7 @@ export default function InvoiceDialog({ open, onOpenChange, invoice, onSuccess }
             </Button>
             <Button type="submit" disabled={loading}>
               {loading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              {invoice ? 'Update Invoice' : 'Create Invoice'}
+              {invoice ? 'Update Invoice' : `Create ${isSales ? 'Sales' : 'Purchase'} Invoice`}
             </Button>
           </div>
         </form>
