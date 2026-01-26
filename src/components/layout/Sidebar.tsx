@@ -101,7 +101,7 @@ export default function Sidebar() {
                 <Bus className="h-6 w-6 text-sidebar-primary" />
               </div>
               <div>
-                <h2 className="font-semibold text-sidebar-foreground">Fleet Manager</h2>
+                <h2 className="font-semibold text-sidebar-foreground">BusManager</h2>
                 <p className="text-xs text-sidebar-foreground/60 capitalize">{userRole} Portal</p>
               </div>
             </div>
