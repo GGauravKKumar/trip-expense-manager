@@ -6,6 +6,7 @@ from .buses import router as buses_router
 from .routes import router as routes_router
 from .trips import router as trips_router
 from .expenses import router as expenses_router
+from .expense_categories import router as expense_categories_router
 from .drivers import router as drivers_router
 from .schedules import router as schedules_router
 from .stock import router as stock_router
@@ -22,6 +23,7 @@ __all__ = [
     "routes_router",
     "trips_router",
     "expenses_router",
+    "expense_categories_router",
     "drivers_router",
     "schedules_router",
     "stock_router",

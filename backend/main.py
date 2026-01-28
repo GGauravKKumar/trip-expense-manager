@@ -9,7 +9,7 @@ from fastapi.staticfiles import StaticFiles
 
 from routes import (
     auth_router, buses_router, routes_router, trips_router,
-    expenses_router, drivers_router, schedules_router,
+    expenses_router, expense_categories_router, drivers_router, schedules_router,
     stock_router, invoices_router, repairs_router,
     uploads_router, settings_router, states_router,
     notifications_router
@@ -45,6 +45,7 @@ app.include_router(buses_router, prefix="/buses", tags=["Buses"])
 app.include_router(routes_router, prefix="/routes", tags=["Routes"])
 app.include_router(trips_router, prefix="/trips", tags=["Trips"])
 app.include_router(expenses_router, prefix="/expenses", tags=["Expenses"])
+app.include_router(expense_categories_router, prefix="/expense-categories", tags=["Expense Categories"])
 app.include_router(drivers_router, prefix="/drivers", tags=["Drivers"])
 app.include_router(schedules_router, prefix="/schedules", tags=["Schedules"])
 app.include_router(stock_router, prefix="/stock", tags=["Stock"])
