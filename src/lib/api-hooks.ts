@@ -160,7 +160,7 @@ export function useExpenses(params?: {
 }
 
 export function useExpenseCategories() {
-  return useApiQuery<any[]>(['expense-categories'], '/expenses/categories');
+  return useApiQuery<any[]>(['expense-categories'], '/expense-categories');
 }
 
 export function useExpense(id: string) {

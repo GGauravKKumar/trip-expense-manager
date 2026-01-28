@@ -2,8 +2,6 @@
 # Ultra-lightweight setup (~300MB RAM)
 # Run with: docker compose -f docker-compose.python.yml up -d
 
-version: "3.8"
-
 services:
   # PostgreSQL Database
   db:
@@ -11,12 +9,12 @@ services:
     container_name: busmanager-db
     restart: unless-stopped
     environment:
-      POSTGRES_USER: postgres
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-your-super-secret-password}
-      POSTGRES_DB: postgres
+      POSTGRES_DB: ${POSTGRES_DB:-postgres}
     volumes:
       - db-data:/var/lib/postgresql/data
-      - ./docker/init-db.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - ./docker/init-db-python.sql:/docker-entrypoint-initdb.d/init.sql:ro
     ports:
       - "5432:5432"
     healthcheck:
@@ -42,7 +40,7 @@ services:
       db:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-your-super-secret-password}@db:5432/postgres
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-your-super-secret-password}@db:5432/${POSTGRES_DB:-postgres}
       JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-token-with-at-least-32-characters}
       UPLOAD_DIR: /app/uploads
     volumes:
