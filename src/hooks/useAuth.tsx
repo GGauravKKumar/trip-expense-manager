@@ -1,11 +1,15 @@
 import { useState, useEffect, createContext, useContext, ReactNode } from 'react';
-import { User, Session } from '@supabase/supabase-js';
+import { User as SupabaseUser, Session as SupabaseSession } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
+import apiClient, { User as ApiUser } from '@/lib/api-client';
 import { AppRole } from '@/types/database';
 
+// When VITE_API_URL is set, the app runs against the Python backend (offline/self-hosted)
+const USE_PYTHON_API = !!import.meta.env.VITE_API_URL;
+
 interface AuthContextType {
-  user: User | null;
-  session: Session | null;
+  user: SupabaseUser | ApiUser | null;
+  session: SupabaseSession | { user: ApiUser; access_token: string | null } | null;
   userRole: AppRole | null;
   loading: boolean;
   signUp: (email: string, password: string, fullName: string) => Promise<{ error: Error | null }>;
@@ -16,28 +20,48 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [session, setSession] = useState<Session | null>(null);
+  const [user, setUser] = useState<SupabaseUser | ApiUser | null>(null);
+  const [session, setSession] = useState<SupabaseSession | { user: ApiUser; access_token: string | null } | null>(null);
   const [userRole, setUserRole] = useState<AppRole | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (USE_PYTHON_API) {
+      // Python backend mode
+      const unsubscribe = apiClient.onAuthStateChange((apiUser) => {
+        setUser(apiUser);
+        setSession(apiUser ? { user: apiUser, access_token: apiClient.getToken() } : null);
+        setUserRole((apiUser?.role as AppRole) ?? null);
+        setLoading(false);
+      });
+
+      apiClient.getSession().then(({ user: apiUser }) => {
+        setUser(apiUser);
+        setSession(apiUser ? { user: apiUser, access_token: apiClient.getToken() } : null);
+        setUserRole((apiUser?.role as AppRole) ?? null);
+        setLoading(false);
+      });
+
+      return unsubscribe;
+    }
+
+    // Lovable Cloud mode
     // Set up auth state listener FIRST
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        setSession(session);
-        setUser(session?.user ?? null);
-        
-        if (session?.user) {
+      async (_event, newSession) => {
+        setSession(newSession);
+        setUser(newSession?.user ?? null);
+
+        if (newSession?.user) {
           // Fetch user role
           setTimeout(async () => {
             const { data: roleData } = await supabase
               .from('user_roles')
               .select('role')
-              .eq('user_id', session.user.id)
+              .eq('user_id', newSession.user.id)
               .maybeSingle();
-            
-            setUserRole(roleData?.role as AppRole ?? null);
+
+            setUserRole((roleData?.role as AppRole) ?? null);
             setLoading(false);
           }, 0);
         } else {
@@ -48,18 +72,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     );
 
     // THEN get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      
-      if (session?.user) {
+    supabase.auth.getSession().then(({ data: { session: initialSession } }) => {
+      setSession(initialSession);
+      setUser(initialSession?.user ?? null);
+
+      if (initialSession?.user) {
         supabase
           .from('user_roles')
           .select('role')
-          .eq('user_id', session.user.id)
+          .eq('user_id', initialSession.user.id)
           .maybeSingle()
           .then(({ data: roleData }) => {
-            setUserRole(roleData?.role as AppRole ?? null);
+            setUserRole((roleData?.role as AppRole) ?? null);
             setLoading(false);
           });
       } else {
@@ -71,6 +95,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signUp = async (email: string, password: string, fullName: string) => {
+    if (USE_PYTHON_API) {
+      return apiClient.signUp(email, password, fullName);
+    }
+
     const { error } = await supabase.auth.signUp({
       email,
       password,
@@ -85,6 +113,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signIn = async (email: string, password: string) => {
+    if (USE_PYTHON_API) {
+      return apiClient.signIn(email, password);
+    }
+
     const { error } = await supabase.auth.signInWithPassword({
       email,
       password,
@@ -93,6 +125,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut = async () => {
+    if (USE_PYTHON_API) {
+      await apiClient.signOut();
+      return;
+    }
+
     await supabase.auth.signOut();
   };
 
