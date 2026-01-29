@@ -3,7 +3,15 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import { AuthProvider } from "@/hooks/useAuth";
+
+// Use offline auth provider when VITE_API_URL is set (Python backend mode)
+const USE_PYTHON_API = !!import.meta.env.VITE_API_URL;
+
+// Dynamic import based on environment
+import { AuthProvider as SupabaseAuthProvider } from "@/hooks/useAuth";
+import { AuthProvider as OfflineAuthProvider } from "@/hooks/useAuthOffline";
+
+const AuthProvider = USE_PYTHON_API ? OfflineAuthProvider : SupabaseAuthProvider;
 import ProtectedRoute from "@/components/ProtectedRoute";
 import Login from "@/pages/Login";
 import Signup from "@/pages/Signup";
