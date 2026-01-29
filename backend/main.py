@@ -6,6 +6,7 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from pathlib import Path
 
 from routes import (
     auth_router, buses_router, routes_router, trips_router,
@@ -31,10 +32,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Create uploads directory if not exists
-UPLOAD_DIR = os.getenv("UPLOAD_DIR", "/app/uploads")
-os.makedirs(f"{UPLOAD_DIR}/expenses", exist_ok=True)
-os.makedirs(f"{UPLOAD_DIR}/repairs", exist_ok=True)
+
+
+BASE_DIR = Path(__file__).resolve().parent
+
+# Upload directory (overrideable via env)
+UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", BASE_DIR / "uploads")).resolve()
+
+# Create required subdirectories
+(UPLOAD_DIR / "expenses").mkdir(parents=True, exist_ok=True)
+(UPLOAD_DIR / "repairs").mkdir(parents=True, exist_ok=True)
 
 # Mount static files for uploads
 app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
