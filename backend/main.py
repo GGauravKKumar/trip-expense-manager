@@ -1,19 +1,60 @@
-"""
-BusManager FastAPI Backend
-Main application entry point
-"""
+"""BusManager FastAPI Backend - main application entry point."""
+
 import os
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from pathlib import Path
 
-from routes import (
-    auth_router, buses_router, routes_router, trips_router,
-    expenses_router, expense_categories_router, drivers_router, schedules_router,
-    stock_router, invoices_router, repairs_router,
-    uploads_router, settings_router, states_router,
-    notifications_router
+
+def _load_env_file(path: Path) -> None:
+    """Lightweight .env loader (no extra dependency).
+
+    - Only sets variables that are not already in the environment
+    - Supports simple KEY=VALUE lines and ignores comments/blank lines
+    """
+    if not path.exists() or not path.is_file():
+        return
+
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if key:
+            os.environ.setdefault(key, value)
+
+
+def load_env() -> None:
+    """Load env vars from backend/.env then project-root .env (if present)."""
+    base_dir = Path(__file__).resolve().parent
+    _load_env_file(base_dir / ".env")
+    _load_env_file(base_dir.parent / ".env")
+
+
+# Ensure env vars are available before importing routers (which import the DB/auth modules).
+load_env()
+
+
+from routes import (  # noqa: E402
+    auth_router,
+    buses_router,
+    drivers_router,
+    expense_categories_router,
+    expenses_router,
+    invoices_router,
+    notifications_router,
+    repairs_router,
+    routes_router,
+    schedules_router,
+    settings_router,
+    states_router,
+    stock_router,
+    trips_router,
+    uploads_router,
 )
 
 # Create FastAPI app

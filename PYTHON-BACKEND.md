@@ -31,7 +31,7 @@ cd busmanager
 ### 2. Create environment file
 
 ```bash
-cp docker/.env.local .env
+cp docker/.env.python.example .env
 ```
 
 Edit `.env` with your settings:
