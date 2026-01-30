@@ -1,12 +1,21 @@
 import { useState, useEffect, createContext, useContext, ReactNode } from 'react';
-import { User as SupabaseUser, Session as SupabaseSession } from '@supabase/supabase-js';
-import { supabase } from '@/integrations/supabase/client';
+import { User as SupabaseUser, Session as SupabaseSession, SupabaseClient } from '@supabase/supabase-js';
 import apiClient, { User as ApiUser } from '@/lib/api-client';
 import { AppRole } from '@/types/database';
 
 // When VITE_API_URL is set, the app runs against the Python backend (offline/self-hosted)
 const VITE_API_URL = import.meta.env.VITE_API_URL;
 const USE_PYTHON_API = !!VITE_API_URL;
+
+// Lazy-load Supabase client only when needed (avoids error when VITE_SUPABASE_URL is missing)
+let supabaseClient: SupabaseClient | null = null;
+const getSupabase = async (): Promise<SupabaseClient> => {
+  if (!supabaseClient) {
+    const { supabase } = await import('@/integrations/supabase/client');
+    supabaseClient = supabase;
+  }
+  return supabaseClient;
+};
 
 // Log backend mode on startup for debugging
 if (typeof window !== 'undefined') {
@@ -54,53 +63,61 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return unsubscribe;
     }
 
-    // Lovable Cloud mode
-    // Set up auth state listener FIRST
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, newSession) => {
-        setSession(newSession);
-        setUser(newSession?.user ?? null);
+    // Lovable Cloud mode - lazy load Supabase
+    let subscription: { unsubscribe: () => void } | null = null;
 
-        if (newSession?.user) {
-          // Fetch user role
-          setTimeout(async () => {
-            const { data: roleData } = await supabase
-              .from('user_roles')
-              .select('role')
-              .eq('user_id', newSession.user.id)
-              .maybeSingle();
+    const initSupabase = async () => {
+      const supabase = await getSupabase();
+      
+      // Set up auth state listener FIRST
+      const { data } = supabase.auth.onAuthStateChange(
+        async (_event, newSession) => {
+          setSession(newSession);
+          setUser(newSession?.user ?? null);
 
-            setUserRole((roleData?.role as AppRole) ?? null);
+          if (newSession?.user) {
+            // Fetch user role
+            setTimeout(async () => {
+              const { data: roleData } = await supabase
+                .from('user_roles')
+                .select('role')
+                .eq('user_id', newSession.user.id)
+                .maybeSingle();
+
+              setUserRole((roleData?.role as AppRole) ?? null);
+              setLoading(false);
+            }, 0);
+          } else {
+            setUserRole(null);
             setLoading(false);
-          }, 0);
-        } else {
-          setUserRole(null);
-          setLoading(false);
+          }
         }
-      }
-    );
+      );
+      subscription = data.subscription;
 
-    // THEN get initial session
-    supabase.auth.getSession().then(({ data: { session: initialSession } }) => {
+      // THEN get initial session
+      const { data: { session: initialSession } } = await supabase.auth.getSession();
       setSession(initialSession);
       setUser(initialSession?.user ?? null);
 
       if (initialSession?.user) {
-        supabase
+        const { data: roleData } = await supabase
           .from('user_roles')
           .select('role')
           .eq('user_id', initialSession.user.id)
-          .maybeSingle()
-          .then(({ data: roleData }) => {
-            setUserRole((roleData?.role as AppRole) ?? null);
-            setLoading(false);
-          });
+          .maybeSingle();
+        setUserRole((roleData?.role as AppRole) ?? null);
+        setLoading(false);
       } else {
         setLoading(false);
       }
-    });
+    };
 
-    return () => subscription.unsubscribe();
+    initSupabase();
+
+    return () => {
+      subscription?.unsubscribe();
+    };
   }, []);
 
   const signUp = async (email: string, password: string, fullName: string) => {
@@ -108,6 +125,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return apiClient.signUp(email, password, fullName);
     }
 
+    const supabase = await getSupabase();
     const { error } = await supabase.auth.signUp({
       email,
       password,
@@ -126,6 +144,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return apiClient.signIn(email, password);
     }
 
+    const supabase = await getSupabase();
     const { error } = await supabase.auth.signInWithPassword({
       email,
       password,
@@ -139,6 +158,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    const supabase = await getSupabase();
     await supabase.auth.signOut();
   };
 
