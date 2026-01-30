@@ -5,7 +5,16 @@ import apiClient, { User as ApiUser } from '@/lib/api-client';
 import { AppRole } from '@/types/database';
 
 // When VITE_API_URL is set, the app runs against the Python backend (offline/self-hosted)
-const USE_PYTHON_API = !!import.meta.env.VITE_API_URL;
+const VITE_API_URL = import.meta.env.VITE_API_URL;
+const USE_PYTHON_API = !!VITE_API_URL;
+
+// Log backend mode on startup for debugging
+if (typeof window !== 'undefined') {
+  console.log(`[Auth] Backend mode: ${USE_PYTHON_API ? 'Python API' : 'Cloud'}`);
+  if (USE_PYTHON_API) {
+    console.log(`[Auth] Python API URL: ${VITE_API_URL}`);
+  }
+}
 
 interface AuthContextType {
   user: SupabaseUser | ApiUser | null;
