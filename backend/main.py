@@ -3,10 +3,6 @@
 import os
 from pathlib import Path
 
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-
 
 def _load_env_file(path: Path) -> None:
     """Lightweight .env loader (no extra dependency).
@@ -35,9 +31,13 @@ def load_env() -> None:
     _load_env_file(base_dir.parent / ".env")
 
 
-# Ensure env vars are available before importing routers (which import the DB/auth modules).
+# CRITICAL: Load env vars BEFORE any other imports that depend on them
 load_env()
 
+# Now safe to import modules that read env vars at import time
+from fastapi import FastAPI  # noqa: E402
+from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
+from fastapi.staticfiles import StaticFiles  # noqa: E402
 
 from routes import (  # noqa: E402
     auth_router,
