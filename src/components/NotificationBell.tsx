@@ -8,10 +8,11 @@ import {
 } from '@/components/ui/popover';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { formatDistanceToNow } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
+import apiClient from '@/lib/api-client';
+import { getCloudClient, USE_PYTHON_API } from '@/lib/backend';
 
 interface Notification {
   id: string;
@@ -31,10 +32,19 @@ export default function NotificationBell() {
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
-    if (user) {
-      fetchNotifications();
-      
-      // Subscribe to realtime updates
+    if (!user) return;
+
+    let cleanup: (() => void) | undefined;
+    let cancelled = false;
+
+    const init = async () => {
+      await fetchNotifications();
+      if (USE_PYTHON_API) return; // No realtime in offline mode
+
+      const supabase = await getCloudClient();
+      if (cancelled) return;
+
+      // Subscribe to realtime updates (Cloud mode)
       const channel = supabase
         .channel('notifications')
         .on(
@@ -43,40 +53,59 @@ export default function NotificationBell() {
             event: 'INSERT',
             schema: 'public',
             table: 'notifications',
-            filter: `user_id=eq.${user.id}`,
+            filter: `user_id=eq.${(user as any).id}`,
           },
-          (payload) => {
+          (payload: any) => {
             setNotifications((prev) => [payload.new as Notification, ...prev]);
             setUnreadCount((prev) => prev + 1);
           }
         )
         .subscribe();
 
-      return () => {
+      cleanup = () => {
         supabase.removeChannel(channel);
       };
-    }
+    };
+
+    init();
+
+    return () => {
+      cancelled = true;
+      cleanup?.();
+    };
   }, [user]);
 
   async function fetchNotifications() {
+    if (USE_PYTHON_API) {
+      const { data, error } = await apiClient.get<Notification[]>('/notifications', { limit: 20 });
+      if (!error && data) {
+        setNotifications(data);
+        setUnreadCount(data.filter((n) => !n.read).length);
+      }
+      return;
+    }
+
+    const supabase = await getCloudClient();
     const { data, error } = await supabase
       .from('notifications')
       .select('*')
-      .eq('user_id', user!.id)
+      .eq('user_id', (user as any).id)
       .order('created_at', { ascending: false })
       .limit(20);
 
     if (!error && data) {
       setNotifications(data as Notification[]);
-      setUnreadCount(data.filter((n) => !n.read).length);
+      setUnreadCount((data as Notification[]).filter((n) => !n.read).length);
     }
   }
 
   async function markAsRead(id: string) {
-    await supabase
-      .from('notifications')
-      .update({ read: true })
-      .eq('id', id);
+    if (USE_PYTHON_API) {
+      await apiClient.put(`/notifications/${id}/read`, {});
+    } else {
+      const supabase = await getCloudClient();
+      await supabase.from('notifications').update({ read: true }).eq('id', id);
+    }
 
     setNotifications((prev) =>
       prev.map((n) => (n.id === id ? { ...n, read: true } : n))
@@ -88,10 +117,12 @@ export default function NotificationBell() {
     const unreadIds = notifications.filter((n) => !n.read).map((n) => n.id);
     if (unreadIds.length === 0) return;
 
-    await supabase
-      .from('notifications')
-      .update({ read: true })
-      .in('id', unreadIds);
+    if (USE_PYTHON_API) {
+      await apiClient.put('/notifications/read-all', {});
+    } else {
+      const supabase = await getCloudClient();
+      await supabase.from('notifications').update({ read: true }).in('id', unreadIds);
+    }
 
     setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
     setUnreadCount(0);

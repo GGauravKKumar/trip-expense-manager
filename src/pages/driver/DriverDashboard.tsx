@@ -1,12 +1,13 @@
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useEffect, useState } from 'react';
-import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { MapPin, Receipt, Clock, CheckCircle, Loader2 } from 'lucide-react';
 import { Trip } from '@/types/database';
 import { toast } from 'sonner';
 import { startOfMonth, endOfMonth, format } from 'date-fns';
+import apiClient from '@/lib/api-client';
+import { getCloudClient, USE_PYTHON_API } from '@/lib/backend';
 
 import UpcomingTripsCard from '@/components/driver/UpcomingTripsCard';
 import ActiveTripCard from '@/components/driver/ActiveTripCard';
@@ -38,16 +39,35 @@ export default function DriverDashboard() {
 
   async function fetchAllData() {
     setLoading(true);
-    
-    // Get profile first
-    const { data: profile } = await supabase.from('profiles').select('id').eq('user_id', user!.id).single();
+
+    // Offline (Python API) - profile id comes from the auth payload
+    if (USE_PYTHON_API) {
+      const pid = (user as any)?.profile_id as string | undefined;
+      if (!pid) {
+        setLoading(false);
+        return;
+      }
+      setProfileId(pid);
+
+      await Promise.all([
+        fetchStats(pid),
+        fetchTrips(pid),
+        fetchExpenses(pid),
+        fetchMonthlyData(pid),
+      ]);
+      setLoading(false);
+      return;
+    }
+
+    // Cloud mode - fetch profile id via database
+    const supabase = await getCloudClient();
+    const { data: profile } = await supabase.from('profiles').select('id').eq('user_id', (user as any)!.id).single();
     if (!profile) {
       setLoading(false);
       return;
     }
     setProfileId(profile.id);
 
-    // Fetch all data in parallel
     await Promise.all([
       fetchStats(profile.id),
       fetchTrips(profile.id),
@@ -59,6 +79,24 @@ export default function DriverDashboard() {
   }
 
   async function fetchStats(profileId: string) {
+    if (USE_PYTHON_API) {
+      const [{ data: allTrips }, { data: activeTrips }, { data: pendingExpenses }, { data: approvedExpenses }] = await Promise.all([
+        apiClient.get<any[]>('/trips', { limit: 1000 }),
+        apiClient.get<any[]>('/trips', { status: 'in_progress', limit: 1000 }),
+        apiClient.get<any[]>('/expenses', { status: 'pending', limit: 1000 }),
+        apiClient.get<any[]>('/expenses', { status: 'approved', limit: 1000 }),
+      ]);
+
+      setStats({
+        trips: allTrips?.length || 0,
+        activeTrips: activeTrips?.length || 0,
+        pendingExpenses: pendingExpenses?.length || 0,
+        approvedExpenses: approvedExpenses?.length || 0,
+      });
+      return;
+    }
+
+    const supabase = await getCloudClient();
     const [{ count: trips }, { count: activeTrips }, { count: pendingExpenses }, { count: approvedExpenses }] = await Promise.all([
       supabase.from('trips').select('*', { count: 'exact', head: true }).eq('driver_id', profileId),
       supabase.from('trips').select('*', { count: 'exact', head: true }).eq('driver_id', profileId).eq('status', 'in_progress'),
@@ -70,6 +108,16 @@ export default function DriverDashboard() {
   }
 
   async function fetchTrips(profileId: string) {
+    if (USE_PYTHON_API) {
+      const { data } = await apiClient.get<any[]>('/trips', { limit: 1000 });
+      const filtered = (data || [])
+        .filter((t) => ['scheduled', 'in_progress'].includes(t.status))
+        .sort((a, b) => new Date(a.start_date).getTime() - new Date(b.start_date).getTime());
+      setTrips(filtered as Trip[]);
+      return;
+    }
+
+    const supabase = await getCloudClient();
     const { data } = await supabase
       .from('trips')
       .select(`*, bus:buses(registration_number), route:routes(route_name)`)
@@ -81,6 +129,13 @@ export default function DriverDashboard() {
   }
 
   async function fetchExpenses(profileId: string) {
+    if (USE_PYTHON_API) {
+      const { data } = await apiClient.get<Expense[]>('/expenses', { limit: 10 });
+      setExpenses((data || []) as Expense[]);
+      return;
+    }
+
+    const supabase = await getCloudClient();
     const { data } = await supabase
       .from('expenses')
       .select(`id, amount, status, expense_date, category:expense_categories(name), trip:trips(trip_number)`)
@@ -96,6 +151,21 @@ export default function DriverDashboard() {
     const monthStart = format(startOfMonth(now), 'yyyy-MM-dd');
     const monthEnd = format(endOfMonth(now), 'yyyy-MM-dd');
 
+    if (USE_PYTHON_API) {
+      const { data: monthlyTrips } = await apiClient.get<any[]>('/trips', { status: 'completed', limit: 1000 });
+      const filtered = (monthlyTrips || []).filter((t) => {
+        const d = new Date(t.start_date);
+        return d >= new Date(monthStart) && d <= new Date(monthEnd);
+      });
+      const distance = filtered.reduce(
+        (sum, t) => sum + (Number(t.distance_traveled) || 0) + (Number(t.distance_return) || 0),
+        0
+      );
+      setMonthlyData({ trips: filtered.length, distance });
+      return;
+    }
+
+    const supabase = await getCloudClient();
     const { data: monthlyTrips } = await supabase
       .from('trips')
       .select('id, distance_traveled, distance_return')
@@ -114,10 +184,22 @@ export default function DriverDashboard() {
   }
 
   async function handleStartTrip(trip: Trip) {
-    const { error } = await supabase
-      .from('trips')
-      .update({ status: 'in_progress' })
-      .eq('id', trip.id);
+    if (USE_PYTHON_API) {
+      const { error } = await apiClient.put(`/trips/${trip.id}`, { status: 'in_progress' });
+      if (error) {
+        toast.error(error.message || 'Failed to start trip');
+      } else {
+        toast.success('Trip started successfully');
+        if (profileId) {
+          fetchTrips(profileId);
+          fetchStats(profileId);
+        }
+      }
+      return;
+    }
+
+    const supabase = await getCloudClient();
+    const { error } = await supabase.from('trips').update({ status: 'in_progress' }).eq('id', trip.id);
 
     if (error) {
       toast.error('Failed to start trip');
@@ -131,6 +213,25 @@ export default function DriverDashboard() {
   }
 
   async function handleCompleteTrip(trip: Trip) {
+    if (USE_PYTHON_API) {
+      const { error } = await apiClient.put(`/trips/${trip.id}`, {
+        status: 'completed',
+        end_date: new Date().toISOString(),
+      });
+      if (error) {
+        toast.error(error.message || 'Failed to complete trip');
+      } else {
+        toast.success('Trip completed successfully');
+        if (profileId) {
+          fetchTrips(profileId);
+          fetchStats(profileId);
+          fetchMonthlyData(profileId);
+        }
+      }
+      return;
+    }
+
+    const supabase = await getCloudClient();
     const { error } = await supabase
       .from('trips')
       .update({ 
