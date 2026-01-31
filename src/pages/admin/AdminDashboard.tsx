@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { supabase } from '@/integrations/supabase/client';
+import apiClient from '@/lib/api-client';
+import { getCloudClient, USE_PYTHON_API } from '@/lib/backend';
 import { 
   Bus, Users, MapPin, Receipt, AlertTriangle, CheckCircle, Clock, 
   TrendingUp, TrendingDown, Fuel, Calendar, FileWarning, IdCard
@@ -101,13 +102,21 @@ export default function AdminDashboard() {
 
   async function fetchAllData() {
     // Fetch expiry alert threshold from settings first
-    const { data: expirySetting } = await supabase
-      .from('admin_settings')
-      .select('value')
-      .eq('key', 'expiry_alert_days')
-      .single();
-    
-    const alertDays = expirySetting?.value ? parseInt(expirySetting.value) : 30;
+    let alertDays = 30;
+    if (USE_PYTHON_API) {
+      const { data: expirySetting } = await apiClient.get<any>('/settings/expiry_alert_days');
+      const parsed = expirySetting?.value ? parseInt(expirySetting.value) : 30;
+      alertDays = Number.isFinite(parsed) ? parsed : 30;
+    } else {
+      const supabase = await getCloudClient();
+      const { data: expirySetting } = await supabase
+        .from('admin_settings')
+        .select('value')
+        .eq('key', 'expiry_alert_days')
+        .single();
+      alertDays = expirySetting?.value ? parseInt(expirySetting.value) : 30;
+    }
+
     setExpiryAlertDays(alertDays);
 
     await Promise.all([
@@ -121,6 +130,41 @@ export default function AdminDashboard() {
   }
 
   async function fetchStats() {
+    if (USE_PYTHON_API) {
+      const [
+        { data: buses },
+        { data: activeBuses },
+        { data: drivers },
+        { data: trips },
+        { data: activeTrips },
+        { data: pendingExpenses },
+        { data: approvedExpenses },
+      ] = await Promise.all([
+        apiClient.get<any[]>('/buses'),
+        apiClient.get<any[]>('/buses', { status: 'active' }),
+        apiClient.get<any[]>('/drivers'),
+        apiClient.get<any[]>('/trips', { limit: 1000 }),
+        apiClient.get<any[]>('/trips', { status: 'in_progress', limit: 1000 }),
+        apiClient.get<any[]>('/expenses', { status: 'pending', limit: 1000 }),
+        apiClient.get<any[]>('/expenses', { status: 'approved', limit: 1000 }),
+      ]);
+
+      const totalExpenseAmount = (approvedExpenses || []).reduce((sum, e) => sum + Number(e.amount || 0), 0);
+
+      setStats({
+        totalBuses: buses?.length || 0,
+        activeBuses: activeBuses?.length || 0,
+        totalDrivers: drivers?.length || 0,
+        totalTrips: trips?.length || 0,
+        activeTrips: activeTrips?.length || 0,
+        pendingExpenses: pendingExpenses?.length || 0,
+        approvedExpenses: approvedExpenses?.length || 0,
+        totalExpenseAmount,
+      });
+      return;
+    }
+
+    const supabase = await getCloudClient();
     const [
       { count: totalBuses },
       { count: activeBuses },
@@ -139,8 +183,8 @@ export default function AdminDashboard() {
       supabase.from('expenses').select('amount, status'),
     ]);
 
-    const approvedExpenses = expenseData?.filter(e => e.status === 'approved') || [];
-    const totalExpenseAmount = approvedExpenses.reduce((sum, e) => sum + Number(e.amount), 0);
+    const approvedExpenses = expenseData?.filter((e: any) => e.status === 'approved') || [];
+    const totalExpenseAmount = approvedExpenses.reduce((sum: number, e: any) => sum + Number(e.amount), 0);
 
     setStats({
       totalBuses: totalBuses || 0,
@@ -155,10 +199,18 @@ export default function AdminDashboard() {
   }
 
   async function fetchExpiringBuses(alertDays: number = 30) {
-    const { data: buses } = await supabase
-      .from('buses')
-      .select('id, registration_number, bus_name, insurance_expiry, puc_expiry, fitness_expiry')
-      .eq('status', 'active');
+    let buses: any[] | null | undefined;
+    if (USE_PYTHON_API) {
+      const res = await apiClient.get<any[]>('/buses', { status: 'active' });
+      buses = res.data;
+    } else {
+      const supabase = await getCloudClient();
+      const { data } = await supabase
+        .from('buses')
+        .select('id, registration_number, bus_name, insurance_expiry, puc_expiry, fitness_expiry')
+        .eq('status', 'active');
+      buses = data;
+    }
 
     if (!buses) return;
 
@@ -192,10 +244,18 @@ export default function AdminDashboard() {
   }
 
   async function fetchExpiringLicenses(alertDays: number = 30) {
-    const { data: drivers } = await supabase
-      .from('profiles')
-      .select('id, full_name, license_number, license_expiry')
-      .not('license_expiry', 'is', null);
+    let drivers: any[] | null | undefined;
+    if (USE_PYTHON_API) {
+      const res = await apiClient.get<any[]>('/drivers');
+      drivers = res.data;
+    } else {
+      const supabase = await getCloudClient();
+      const { data } = await supabase
+        .from('profiles')
+        .select('id, full_name, license_number, license_expiry')
+        .not('license_expiry', 'is', null);
+      drivers = data;
+    }
 
     if (!drivers) return;
 
@@ -224,29 +284,47 @@ export default function AdminDashboard() {
   }
 
   async function fetchProfitData() {
-    const { data: trips } = await supabase
-      .from('trips')
-      .select(`
-        *,
-        bus:buses(id, registration_number, bus_name),
-        driver:profiles(id, full_name)
-      `)
-      .eq('status', 'completed');
+    let trips: any[] | null | undefined;
+    let fuelCategories: any[] | null | undefined;
+    let expenses: any[] | null | undefined;
 
-    // Get all fuel-related categories (diesel, fuel, petrol, etc.)
-    const { data: fuelCategories } = await supabase
-      .from('expense_categories')
-      .select('id, name')
-      .or('name.ilike.%diesel%,name.ilike.%fuel%,name.ilike.%petrol%');
-
-    const fuelCategoryIds = new Set(fuelCategories?.map(c => c.id) || []);
-
-    const { data: expenses } = await supabase
-      .from('expenses')
-      .select('trip_id, amount, category_id')
-      .eq('status', 'approved');
+    if (USE_PYTHON_API) {
+      const [tripsRes, catsRes, expRes] = await Promise.all([
+        apiClient.get<any[]>('/trips', { status: 'completed', limit: 1000 }),
+        apiClient.get<any[]>('/expense-categories'),
+        apiClient.get<any[]>('/expenses', { status: 'approved', limit: 1000 }),
+      ]);
+      trips = tripsRes.data;
+      fuelCategories = catsRes.data;
+      expenses = expRes.data;
+    } else {
+      const supabase = await getCloudClient();
+      const [tripsRes, catsRes, expRes] = await Promise.all([
+        supabase
+          .from('trips')
+          .select(`
+            *,
+            bus:buses(id, registration_number, bus_name),
+            driver:profiles(id, full_name)
+          `)
+          .eq('status', 'completed'),
+        supabase
+          .from('expense_categories')
+          .select('id, name')
+          .or('name.ilike.%diesel%,name.ilike.%fuel%,name.ilike.%petrol%'),
+        supabase
+          .from('expenses')
+          .select('trip_id, amount, category_id')
+          .eq('status', 'approved'),
+      ]);
+      trips = tripsRes.data;
+      fuelCategories = catsRes.data;
+      expenses = expRes.data;
+    }
 
     if (!trips) return;
+
+    const fuelCategoryIds = new Set((fuelCategories || []).map((c: any) => c.id));
 
     const expensesByTrip: Record<string, { total: number; fuel: number }> = {};
     expenses?.forEach((exp) => {
@@ -362,18 +440,33 @@ export default function AdminDashboard() {
   }
 
   async function fetchRecentActivity() {
-    const [{ data: recentTrips }, { data: recentExpenses }] = await Promise.all([
-      supabase
-        .from('trips')
-        .select('id, trip_number, status, created_at')
-        .order('created_at', { ascending: false })
-        .limit(5),
-      supabase
-        .from('expenses')
-        .select('id, amount, status, created_at, category:expense_categories(name)')
-        .order('created_at', { ascending: false })
-        .limit(5),
-    ]);
+    let recentTrips: any[] | null | undefined;
+    let recentExpenses: any[] | null | undefined;
+
+    if (USE_PYTHON_API) {
+      const [tRes, eRes] = await Promise.all([
+        apiClient.get<any[]>('/trips', { limit: 5 }),
+        apiClient.get<any[]>('/expenses', { limit: 5 }),
+      ]);
+      recentTrips = tRes.data;
+      recentExpenses = eRes.data;
+    } else {
+      const supabase = await getCloudClient();
+      const [tRes, eRes] = await Promise.all([
+        supabase
+          .from('trips')
+          .select('id, trip_number, status, created_at')
+          .order('created_at', { ascending: false })
+          .limit(5),
+        supabase
+          .from('expenses')
+          .select('id, amount, status, created_at, category:expense_categories(name)')
+          .order('created_at', { ascending: false })
+          .limit(5),
+      ]);
+      recentTrips = tRes.data;
+      recentExpenses = eRes.data;
+    }
 
     const activities: RecentActivity[] = [];
 
@@ -387,7 +480,7 @@ export default function AdminDashboard() {
       });
     });
 
-    recentExpenses?.forEach((exp) => {
+    recentExpenses?.forEach((exp: any) => {
       const category = (exp.category as any)?.name || 'Expense';
       activities.push({
         id: `expense-${exp.id}`,
