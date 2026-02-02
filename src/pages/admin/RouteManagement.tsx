@@ -8,7 +8,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { supabase } from '@/integrations/supabase/client';
+import { USE_PYTHON_API, getCloudClient } from '@/lib/backend';
+import { apiClient } from '@/lib/api-client';
 import { Route, IndianState } from '@/types/database';
 import { Plus, Pencil, Loader2, Receipt, Download, Trash2, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
@@ -93,32 +94,52 @@ export default function RouteManagement() {
   }, []);
 
   async function fetchStates() {
-    const { data, error } = await supabase
-      .from('indian_states')
-      .select('*')
-      .order('state_name');
-
-    if (error) {
-      toast.error('Failed to fetch states');
+    if (USE_PYTHON_API) {
+      const { data, error } = await apiClient.get<IndianState[]>('/states');
+      if (error) {
+        toast.error('Failed to fetch states');
+      } else {
+        setStates(data || []);
+      }
     } else {
-      setStates(data as IndianState[]);
+      const supabase = await getCloudClient();
+      const { data, error } = await supabase
+        .from('indian_states')
+        .select('*')
+        .order('state_name');
+
+      if (error) {
+        toast.error('Failed to fetch states');
+      } else {
+        setStates(data as IndianState[]);
+      }
     }
   }
 
   async function fetchRoutes() {
-    const { data, error } = await supabase
-      .from('routes')
-      .select(`
-        *,
-        from_state:indian_states!routes_from_state_id_fkey(state_name, state_code),
-        to_state:indian_states!routes_to_state_id_fkey(state_name, state_code)
-      `)
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      toast.error('Failed to fetch routes');
+    if (USE_PYTHON_API) {
+      const { data, error } = await apiClient.get<Route[]>('/routes');
+      if (error) {
+        toast.error('Failed to fetch routes');
+      } else {
+        setRoutes(data || []);
+      }
     } else {
-      setRoutes(data as Route[]);
+      const supabase = await getCloudClient();
+      const { data, error } = await supabase
+        .from('routes')
+        .select(`
+          *,
+          from_state:indian_states!routes_from_state_id_fkey(state_name, state_code),
+          to_state:indian_states!routes_to_state_id_fkey(state_name, state_code)
+        `)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        toast.error('Failed to fetch routes');
+      } else {
+        setRoutes(data as Route[]);
+      }
     }
     setLoading(false);
   }
@@ -168,27 +189,26 @@ export default function RouteManagement() {
     };
 
     if (editingRoute) {
-      const { error } = await supabase
-        .from('routes')
-        .update(payload)
-        .eq('id', editingRoute.id);
-
-      if (error) {
-        toast.error('Failed to update route');
+      if (USE_PYTHON_API) {
+        const { error } = await apiClient.put(`/routes/${editingRoute.id}`, payload);
+        if (error) toast.error('Failed to update route');
+        else { toast.success('Route updated successfully'); setDialogOpen(false); fetchRoutes(); }
       } else {
-        toast.success('Route updated successfully');
-        setDialogOpen(false);
-        fetchRoutes();
+        const supabase = await getCloudClient();
+        const { error } = await supabase.from('routes').update(payload).eq('id', editingRoute.id);
+        if (error) toast.error('Failed to update route');
+        else { toast.success('Route updated successfully'); setDialogOpen(false); fetchRoutes(); }
       }
     } else {
-      const { error } = await supabase.from('routes').insert(payload);
-
-      if (error) {
-        toast.error(error.message || 'Failed to add route');
+      if (USE_PYTHON_API) {
+        const { error } = await apiClient.post('/routes', payload);
+        if (error) toast.error(error.message || 'Failed to add route');
+        else { toast.success('Route added successfully'); setDialogOpen(false); fetchRoutes(); }
       } else {
-        toast.success('Route added successfully');
-        setDialogOpen(false);
-        fetchRoutes();
+        const supabase = await getCloudClient();
+        const { error } = await supabase.from('routes').insert(payload);
+        if (error) toast.error(error.message || 'Failed to add route');
+        else { toast.success('Route added successfully'); setDialogOpen(false); fetchRoutes(); }
       }
     }
     setSubmitting(false);
@@ -196,12 +216,13 @@ export default function RouteManagement() {
 
   async function handleDeleteClick(route: Route) {
     setRouteToDelete(route);
-    // Check for associated trips
-    const { count } = await supabase
-      .from('trips')
-      .select('*', { count: 'exact', head: true })
-      .eq('route_id', route.id);
-    setTripCount(count || 0);
+    if (USE_PYTHON_API) {
+      setTripCount(0);
+    } else {
+      const supabase = await getCloudClient();
+      const { count } = await supabase.from('trips').select('*', { count: 'exact', head: true }).eq('route_id', route.id);
+      setTripCount(count || 0);
+    }
     setDeleteDialogOpen(true);
   }
 
@@ -209,16 +230,15 @@ export default function RouteManagement() {
     if (!routeToDelete) return;
     setDeleting(true);
 
-    const { error } = await supabase
-      .from('routes')
-      .delete()
-      .eq('id', routeToDelete.id);
-
-    if (error) {
-      toast.error('Failed to delete route: ' + error.message);
+    if (USE_PYTHON_API) {
+      const { error } = await apiClient.delete(`/routes/${routeToDelete.id}`);
+      if (error) toast.error('Failed to delete route: ' + error.message);
+      else { toast.success('Route deleted successfully'); fetchRoutes(); }
     } else {
-      toast.success('Route deleted successfully');
-      fetchRoutes();
+      const supabase = await getCloudClient();
+      const { error } = await supabase.from('routes').delete().eq('id', routeToDelete.id);
+      if (error) toast.error('Failed to delete route: ' + error.message);
+      else { toast.success('Route deleted successfully'); fetchRoutes(); }
     }
     setDeleting(false);
     setDeleteDialogOpen(false);

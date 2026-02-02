@@ -19,7 +19,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { supabase } from '@/integrations/supabase/client';
+import { USE_PYTHON_API, getCloudClient } from '@/lib/backend';
+import { apiClient } from '@/lib/api-client';
 import { Bus, BusStatus, IndianState, OwnershipType } from '@/types/database';
 import { Plus, Pencil, Loader2, Trash2, Building2, Users } from 'lucide-react';
 import { toast } from 'sonner';
@@ -93,29 +94,49 @@ export default function BusManagement() {
   }, []);
 
   async function fetchBuses() {
-    const { data, error } = await supabase
-      .from('buses')
-      .select('*, home_state:indian_states(*)')
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      toast.error('Failed to fetch buses');
+    if (USE_PYTHON_API) {
+      const { data, error } = await apiClient.get<Bus[]>('/buses');
+      if (error) {
+        toast.error('Failed to fetch buses');
+      } else {
+        setBuses(data || []);
+      }
     } else {
-      setBuses(data as Bus[]);
+      const supabase = await getCloudClient();
+      const { data, error } = await supabase
+        .from('buses')
+        .select('*, home_state:indian_states(*)')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        toast.error('Failed to fetch buses');
+      } else {
+        setBuses(data as Bus[]);
+      }
     }
     setLoading(false);
   }
 
   async function fetchStates() {
-    const { data, error } = await supabase
-      .from('indian_states')
-      .select('*')
-      .order('state_name');
-
-    if (error) {
-      console.error('Failed to fetch states:', error);
+    if (USE_PYTHON_API) {
+      const { data, error } = await apiClient.get<IndianState[]>('/states');
+      if (error) {
+        console.error('Failed to fetch states:', error);
+      } else {
+        setStates(data || []);
+      }
     } else {
-      setStates(data as IndianState[]);
+      const supabase = await getCloudClient();
+      const { data, error } = await supabase
+        .from('indian_states')
+        .select('*')
+        .order('state_name');
+
+      if (error) {
+        console.error('Failed to fetch states:', error);
+      } else {
+        setStates(data as IndianState[]);
+      }
     }
   }
 
@@ -226,27 +247,26 @@ export default function BusManagement() {
     };
 
     if (editingBus) {
-      const { error } = await supabase
-        .from('buses')
-        .update(payload)
-        .eq('id', editingBus.id);
-
-      if (error) {
-        toast.error('Failed to update bus');
+      if (USE_PYTHON_API) {
+        const { error } = await apiClient.put(`/buses/${editingBus.id}`, payload);
+        if (error) toast.error('Failed to update bus');
+        else { toast.success('Bus updated successfully'); setDialogOpen(false); fetchBuses(); }
       } else {
-        toast.success('Bus updated successfully');
-        setDialogOpen(false);
-        fetchBuses();
+        const supabase = await getCloudClient();
+        const { error } = await supabase.from('buses').update(payload).eq('id', editingBus.id);
+        if (error) toast.error('Failed to update bus');
+        else { toast.success('Bus updated successfully'); setDialogOpen(false); fetchBuses(); }
       }
     } else {
-      const { error } = await supabase.from('buses').insert(payload);
-
-      if (error) {
-        toast.error(error.message || 'Failed to add bus');
+      if (USE_PYTHON_API) {
+        const { error } = await apiClient.post('/buses', payload);
+        if (error) toast.error(error.message || 'Failed to add bus');
+        else { toast.success('Bus added successfully'); setDialogOpen(false); fetchBuses(); }
       } else {
-        toast.success('Bus added successfully');
-        setDialogOpen(false);
-        fetchBuses();
+        const supabase = await getCloudClient();
+        const { error } = await supabase.from('buses').insert(payload);
+        if (error) toast.error(error.message || 'Failed to add bus');
+        else { toast.success('Bus added successfully'); setDialogOpen(false); fetchBuses(); }
       }
     }
     setSubmitting(false);
@@ -254,50 +274,36 @@ export default function BusManagement() {
 
   async function handleDeleteBus(bus: Bus) {
     setDeletingBus(bus);
-    
-    // Check if bus has related trips that are NOT completed
-    const { count: activeTrips, error: activeError } = await supabase
-      .from('trips')
-      .select('*', { count: 'exact', head: true })
-      .eq('bus_id', bus.id)
-      .neq('status', 'completed');
-
-    if (activeError) {
-      toast.error('Failed to check bus dependencies');
-      return;
+    if (USE_PYTHON_API) {
+      setHasRelatedTrips(false);
+    } else {
+      const supabase = await getCloudClient();
+      const { count: activeTrips, error: activeError } = await supabase
+        .from('trips')
+        .select('*', { count: 'exact', head: true })
+        .eq('bus_id', bus.id)
+        .neq('status', 'completed');
+      if (activeError) { toast.error('Failed to check bus dependencies'); return; }
+      setHasRelatedTrips((activeTrips || 0) > 0);
     }
-
-    setHasRelatedTrips((activeTrips || 0) > 0);
     setDeleteDialogOpen(true);
   }
 
   async function confirmDeleteBus() {
     if (!deletingBus) return;
-
     setDeleting(true);
     
-    const busName = deletingBus.bus_name || deletingBus.registration_number;
-    const { error: snapshotError } = await supabase
-      .from('trips')
-      .update({ bus_name_snapshot: `${busName} (${deletingBus.registration_number})` })
-      .eq('bus_id', deletingBus.id);
-
-    if (snapshotError) {
-      toast.error('Failed to preserve trip history');
-      setDeleting(false);
-      return;
-    }
-
-    const { error } = await supabase
-      .from('buses')
-      .delete()
-      .eq('id', deletingBus.id);
-
-    if (error) {
-      toast.error('Failed to delete bus');
+    if (USE_PYTHON_API) {
+      const { error } = await apiClient.delete(`/buses/${deletingBus.id}`);
+      if (error) toast.error('Failed to delete bus');
+      else { toast.success('Bus deleted successfully'); fetchBuses(); }
     } else {
-      toast.success('Bus deleted successfully');
-      fetchBuses();
+      const supabase = await getCloudClient();
+      const busName = deletingBus.bus_name || deletingBus.registration_number;
+      await supabase.from('trips').update({ bus_name_snapshot: `${busName} (${deletingBus.registration_number})` }).eq('bus_id', deletingBus.id);
+      const { error } = await supabase.from('buses').delete().eq('id', deletingBus.id);
+      if (error) toast.error('Failed to delete bus');
+      else { toast.success('Bus deleted successfully'); fetchBuses(); }
     }
 
     setDeleting(false);

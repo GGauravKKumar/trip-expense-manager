@@ -5,7 +5,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import { supabase } from '@/integrations/supabase/client';
+import { USE_PYTHON_API, getCloudClient } from '@/lib/backend';
+import { apiClient } from '@/lib/api-client';
 import { Loader2, Save, Settings as SettingsIcon, Building2, Fuel, Bell } from 'lucide-react';
 import { toast } from 'sonner';
 import ChangePasswordCard from '@/components/ChangePasswordCard';
@@ -40,27 +41,51 @@ export default function Settings() {
   }, []);
 
   async function fetchSettings() {
-    const { data, error } = await supabase
-      .from('admin_settings')
-      .select('key, value');
+    if (USE_PYTHON_API) {
+      const { data, error } = await apiClient.get<{ key: string; value: string }[]>('/settings');
+      
+      if (error) {
+        toast.error('Failed to load settings');
+        console.error(error);
+      } else if (data) {
+        const settingsMap: Record<string, string> = {};
+        data.forEach((row) => {
+          settingsMap[row.key] = row.value;
+        });
+        setSettings({
+          fuel_price_per_liter: settingsMap.fuel_price_per_liter || defaultSettings.fuel_price_per_liter,
+          expiry_alert_days: settingsMap.expiry_alert_days || defaultSettings.expiry_alert_days,
+          company_name: settingsMap.company_name || defaultSettings.company_name,
+          company_address: settingsMap.company_address || defaultSettings.company_address,
+          company_phone: settingsMap.company_phone || defaultSettings.company_phone,
+          company_email: settingsMap.company_email || defaultSettings.company_email,
+          company_gst: settingsMap.company_gst || defaultSettings.company_gst,
+        });
+      }
+    } else {
+      const supabase = await getCloudClient();
+      const { data, error } = await supabase
+        .from('admin_settings')
+        .select('key, value');
 
-    if (error) {
-      toast.error('Failed to load settings');
-      console.error(error);
-    } else if (data) {
-      const settingsMap: Record<string, string> = {};
-      data.forEach((row) => {
-        settingsMap[row.key] = row.value;
-      });
-      setSettings({
-        fuel_price_per_liter: settingsMap.fuel_price_per_liter || defaultSettings.fuel_price_per_liter,
-        expiry_alert_days: settingsMap.expiry_alert_days || defaultSettings.expiry_alert_days,
-        company_name: settingsMap.company_name || defaultSettings.company_name,
-        company_address: settingsMap.company_address || defaultSettings.company_address,
-        company_phone: settingsMap.company_phone || defaultSettings.company_phone,
-        company_email: settingsMap.company_email || defaultSettings.company_email,
-        company_gst: settingsMap.company_gst || defaultSettings.company_gst,
-      });
+      if (error) {
+        toast.error('Failed to load settings');
+        console.error(error);
+      } else if (data) {
+        const settingsMap: Record<string, string> = {};
+        data.forEach((row: { key: string; value: string }) => {
+          settingsMap[row.key] = row.value;
+        });
+        setSettings({
+          fuel_price_per_liter: settingsMap.fuel_price_per_liter || defaultSettings.fuel_price_per_liter,
+          expiry_alert_days: settingsMap.expiry_alert_days || defaultSettings.expiry_alert_days,
+          company_name: settingsMap.company_name || defaultSettings.company_name,
+          company_address: settingsMap.company_address || defaultSettings.company_address,
+          company_phone: settingsMap.company_phone || defaultSettings.company_phone,
+          company_email: settingsMap.company_email || defaultSettings.company_email,
+          company_gst: settingsMap.company_gst || defaultSettings.company_gst,
+        });
+      }
     }
     setLoading(false);
   }
@@ -73,23 +98,33 @@ export default function Settings() {
       value: value || '',
     }));
 
-    // Upsert each setting
-    for (const update of updates) {
-      const { error } = await supabase
-        .from('admin_settings')
-        .update({ value: update.value })
-        .eq('key', update.key);
-
+    if (USE_PYTHON_API) {
+      const { error } = await apiClient.put('/settings', { settings: updates });
       if (error) {
-        toast.error(`Failed to save ${update.key}`);
+        toast.error('Failed to save settings');
         setSaving(false);
         return;
+      }
+    } else {
+      const supabase = await getCloudClient();
+      for (const update of updates) {
+        const { error } = await supabase
+          .from('admin_settings')
+          .update({ value: update.value })
+          .eq('key', update.key);
+
+        if (error) {
+          toast.error(`Failed to save ${update.key}`);
+          setSaving(false);
+          return;
+        }
       }
     }
 
     toast.success('Settings saved successfully');
     setSaving(false);
   }
+
 
   function handleChange(key: keyof SettingsData, value: string) {
     setSettings((prev) => ({ ...prev, [key]: value }));

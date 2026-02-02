@@ -9,7 +9,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { supabase } from '@/integrations/supabase/client';
+import { USE_PYTHON_API, getCloudClient } from '@/lib/backend';
+import { apiClient } from '@/lib/api-client';
 import { useAuth } from '@/hooks/useAuth';
 import { Expense, ExpenseStatus, Trip, ExpenseCategory } from '@/types/database';
 import { Plus, Loader2, Upload } from 'lucide-react';
@@ -43,18 +44,37 @@ export default function DriverExpenses() {
   useEffect(() => { if (user) init(); }, [user]);
 
   async function init() {
-    const { data: profile } = await supabase.from('profiles').select('id').eq('user_id', user!.id).single();
-    if (!profile) return;
-    setProfileId(profile.id);
-    
-    const [{ data: exp }, { data: trp }, { data: cat }] = await Promise.all([
-      supabase.from('expenses').select(`*, category:expense_categories(name), trip:trips(trip_number)`).eq('submitted_by', profile.id).order('created_at', { ascending: false }),
-      supabase.from('trips').select('*').eq('driver_id', profile.id).eq('status', 'in_progress'),
-      supabase.from('expense_categories').select('*'),
-    ]);
-    setExpenses((exp || []) as unknown as Expense[]);
-    setTrips(trp as Trip[] || []);
-    setCategories(cat as ExpenseCategory[] || []);
+    if (USE_PYTHON_API) {
+      // Python API mode
+      const [expRes, trpRes, catRes] = await Promise.all([
+        apiClient.get<Expense[]>('/expenses/my'),
+        apiClient.get<Trip[]>('/trips/my?status=in_progress'),
+        apiClient.get<ExpenseCategory[]>('/expense-categories'),
+      ]);
+      
+      if (expRes.data) setExpenses(expRes.data);
+      if (trpRes.data) setTrips(trpRes.data);
+      if (catRes.data) setCategories(catRes.data);
+      
+      // Get profile ID from user context
+      const user = apiClient.getUser();
+      if (user) setProfileId(user.profile_id);
+    } else {
+      // Cloud mode
+      const supabase = await getCloudClient();
+      const { data: profile } = await supabase.from('profiles').select('id').eq('user_id', user!.id).single();
+      if (!profile) return;
+      setProfileId(profile.id);
+      
+      const [{ data: exp }, { data: trp }, { data: cat }] = await Promise.all([
+        supabase.from('expenses').select(`*, category:expense_categories(name), trip:trips(trip_number)`).eq('submitted_by', profile.id).order('created_at', { ascending: false }),
+        supabase.from('trips').select('*').eq('driver_id', profile.id).eq('status', 'in_progress'),
+        supabase.from('expense_categories').select('*'),
+      ]);
+      setExpenses((exp || []) as unknown as Expense[]);
+      setTrips(trp as Trip[] || []);
+      setCategories(cat as ExpenseCategory[] || []);
+    }
     setLoading(false);
   }
 
@@ -64,23 +84,59 @@ export default function DriverExpenses() {
     setSubmitting(true);
 
     let documentUrl = null;
-    if (file) {
-      const fileName = `${profileId}/${Date.now()}_${file.name}`;
-      const { error: uploadError } = await supabase.storage.from('expense-documents').upload(fileName, file);
-      if (uploadError) { toast.error('Failed to upload document'); setSubmitting(false); return; }
-      const { data: urlData } = supabase.storage.from('expense-documents').getPublicUrl(fileName);
-      documentUrl = urlData.publicUrl;
+    
+    if (USE_PYTHON_API) {
+      // Python API mode
+      if (file) {
+        const uploadResult = await apiClient.uploadFile('expense', file);
+        if (uploadResult.error) {
+          toast.error('Failed to upload document');
+          setSubmitting(false);
+          return;
+        }
+        documentUrl = uploadResult.data?.url || null;
+      }
+
+      const { error } = await apiClient.post('/expenses', {
+        trip_id: formData.trip_id,
+        category_id: formData.category_id,
+        amount: parseFloat(formData.amount),
+        expense_date: formData.expense_date,
+        description: formData.description || null,
+        document_url: documentUrl,
+        fuel_quantity: isFuelCategory && formData.fuel_quantity ? parseFloat(formData.fuel_quantity) : null,
+      });
+
+      if (error) toast.error('Failed to submit expense');
+      else { 
+        toast.success('Expense submitted for approval'); 
+        setDialogOpen(false); 
+        setFile(null); 
+        setFormData({ trip_id: '', category_id: '', amount: '', expense_date: new Date().toISOString().split('T')[0], description: '', fuel_quantity: '' }); 
+        init(); 
+      }
+    } else {
+      // Cloud mode
+      const supabase = await getCloudClient();
+      
+      if (file) {
+        const fileName = `${profileId}/${Date.now()}_${file.name}`;
+        const { error: uploadError } = await supabase.storage.from('expense-documents').upload(fileName, file);
+        if (uploadError) { toast.error('Failed to upload document'); setSubmitting(false); return; }
+        const { data: urlData } = supabase.storage.from('expense-documents').getPublicUrl(fileName);
+        documentUrl = urlData.publicUrl;
+      }
+
+      const { error } = await supabase.from('expenses').insert({
+        trip_id: formData.trip_id, category_id: formData.category_id, submitted_by: profileId,
+        amount: parseFloat(formData.amount), expense_date: formData.expense_date,
+        description: formData.description || null, document_url: documentUrl,
+        fuel_quantity: isFuelCategory && formData.fuel_quantity ? parseFloat(formData.fuel_quantity) : null,
+      });
+
+      if (error) toast.error('Failed to submit expense');
+      else { toast.success('Expense submitted for approval'); setDialogOpen(false); setFile(null); setFormData({ trip_id: '', category_id: '', amount: '', expense_date: new Date().toISOString().split('T')[0], description: '', fuel_quantity: '' }); init(); }
     }
-
-    const { error } = await supabase.from('expenses').insert({
-      trip_id: formData.trip_id, category_id: formData.category_id, submitted_by: profileId,
-      amount: parseFloat(formData.amount), expense_date: formData.expense_date,
-      description: formData.description || null, document_url: documentUrl,
-      fuel_quantity: isFuelCategory && formData.fuel_quantity ? parseFloat(formData.fuel_quantity) : null,
-    });
-
-    if (error) toast.error('Failed to submit expense');
-    else { toast.success('Expense submitted for approval'); setDialogOpen(false); setFile(null); setFormData({ trip_id: '', category_id: '', amount: '', expense_date: new Date().toISOString().split('T')[0], description: '', fuel_quantity: '' }); init(); }
     setSubmitting(false);
   }
 

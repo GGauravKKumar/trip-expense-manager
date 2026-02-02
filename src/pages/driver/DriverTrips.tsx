@@ -8,7 +8,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { supabase } from '@/integrations/supabase/client';
+import { USE_PYTHON_API, getCloudClient } from '@/lib/backend';
+import { apiClient } from '@/lib/api-client';
 import { useAuth } from '@/hooks/useAuth';
 import { Trip, TripStatus, StockItem } from '@/types/database';
 import { Loader2, Gauge, ArrowRight, ArrowLeft, Droplets, Play, CheckCircle, Link } from 'lucide-react';
@@ -63,43 +64,64 @@ export default function DriverTrips() {
   }, [user]);
 
   async function fetchWaterCategory() {
-    const { data } = await supabase
-      .from('expense_categories')
-      .select('id')
-      .ilike('name', 'water')
-      .limit(1)
-      .single();
-    
-    if (data) {
-      setWaterCategoryId(data.id);
+    if (USE_PYTHON_API) {
+      const { data } = await apiClient.get<{ id: string }[]>('/expense-categories?name=water');
+      if (data && data.length > 0) {
+        setWaterCategoryId(data[0].id);
+      }
+    } else {
+      const supabase = await getCloudClient();
+      const { data } = await supabase
+        .from('expense_categories')
+        .select('id')
+        .ilike('name', 'water')
+        .limit(1)
+        .single();
+      
+      if (data) {
+        setWaterCategoryId(data.id);
+      }
     }
   }
 
   async function fetchTrips() {
-    const { data: profile } = await supabase.from('profiles').select('id').eq('user_id', user!.id).single();
-    if (!profile) return;
+    if (USE_PYTHON_API) {
+      const { data } = await apiClient.get<Trip[]>('/trips/my');
+      setTrips((data || []) as Trip[]);
+    } else {
+      const supabase = await getCloudClient();
+      const { data: profile } = await supabase.from('profiles').select('id').eq('user_id', user!.id).single();
+      if (!profile) return;
 
-    const { data } = await supabase
-      .from('trips')
-      .select(`*, bus:buses(registration_number), route:routes(route_name)`)
-      .eq('driver_id', profile.id)
-      .order('start_date', { ascending: false });
-    
-    setTrips((data || []) as Trip[]);
+      const { data } = await supabase
+        .from('trips')
+        .select(`*, bus:buses(registration_number), route:routes(route_name)`)
+        .eq('driver_id', profile.id)
+        .order('start_date', { ascending: false });
+      
+      setTrips((data || []) as Trip[]);
+    }
     setLoading(false);
   }
 
   async function fetchWaterStock() {
-    // Fetch water stock item (case-insensitive search for "water")
-    const { data } = await supabase
-      .from('stock_items')
-      .select('*')
-      .ilike('item_name', '%water%')
-      .limit(1)
-      .single();
-    
-    if (data) {
-      setWaterStock(data as StockItem & { unit_price?: number });
+    if (USE_PYTHON_API) {
+      const { data } = await apiClient.get<StockItem[]>('/stock?name=water');
+      if (data && data.length > 0) {
+        setWaterStock(data[0] as StockItem & { unit_price?: number });
+      }
+    } else {
+      const supabase = await getCloudClient();
+      const { data } = await supabase
+        .from('stock_items')
+        .select('*')
+        .ilike('item_name', '%water%')
+        .limit(1)
+        .single();
+      
+      if (data) {
+        setWaterStock(data as StockItem & { unit_price?: number });
+      }
     }
   }
 
@@ -141,7 +163,6 @@ export default function DriverTrips() {
 
     // Handle two-way trip return journey
     if (selectedTrip.trip_type === 'two_way') {
-      // Use odometer_end as default for return_start if not explicitly set
       const returnStart = odometerData.return_start 
         ? parseFloat(odometerData.return_start) 
         : (odometerData.end ? parseFloat(odometerData.end) : null);
@@ -158,138 +179,150 @@ export default function DriverTrips() {
 
     setSubmitting(true);
 
-    // Handle water stock - only deduct the DIFFERENCE from previous amount
     const newWaterQty = parseInt(waterQuantity) || 0;
     const previousWaterQty = selectedTrip.water_taken || 0;
     const waterDifference = newWaterQty - previousWaterQty;
 
-    if (waterStock && waterDifference > 0) {
-      // Taking more water
-      if (waterDifference > waterStock.quantity) {
-        toast.error(`Not enough water in stock. Available: ${waterStock.quantity} ${waterStock.unit}`);
-        setSubmitting(false);
-        return;
+    if (USE_PYTHON_API) {
+      // Python API mode - simplified water/trip update
+      const tripUpdatePayload = {
+        ...updateData,
+        water_taken: newWaterQty,
+      };
+      
+      const { error } = await apiClient.put(`/trips/${selectedTrip.id}`, tripUpdatePayload);
+      
+      if (error) {
+        toast.error('Failed to update odometer readings');
+      } else {
+        const waterMsg = waterDifference !== 0 
+          ? ` | Water: ${waterDifference > 0 ? '+' : ''}${waterDifference}` 
+          : '';
+        toast.success(`Odometer readings updated${waterMsg}`);
+        setDialogOpen(false);
+        fetchTrips();
+        fetchWaterStock();
       }
+    } else {
+      // Cloud mode with full water stock handling
+      const supabase = await getCloudClient();
 
-      // Get current user's profile for transaction record
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('id')
-        .eq('user_id', user!.id)
-        .single();
+      if (waterStock && waterDifference > 0) {
+        if (waterDifference > waterStock.quantity) {
+          toast.error(`Not enough water in stock. Available: ${waterStock.quantity} ${waterStock.unit}`);
+          setSubmitting(false);
+          return;
+        }
 
-      // Create stock transaction for the difference
-      const { error: txError } = await supabase.from('stock_transactions').insert({
-        stock_item_id: waterStock.id,
-        transaction_type: 'remove' as const,
-        quantity_change: waterDifference,
-        previous_quantity: waterStock.quantity,
-        new_quantity: waterStock.quantity - waterDifference,
-        notes: `Trip ${selectedTrip.trip_number} - Driver pickup${previousWaterQty > 0 ? ' (additional)' : ''}`,
-        created_by: profile?.id,
-      });
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('user_id', user!.id)
+          .single();
 
-      if (txError) {
-        toast.error('Failed to record water pickup');
-        setSubmitting(false);
-        return;
-      }
-
-      // Update stock quantity
-      const { error: stockError } = await supabase
-        .from('stock_items')
-        .update({ 
-          quantity: waterStock.quantity - waterDifference,
-          last_updated_by: profile?.id,
-        })
-        .eq('id', waterStock.id);
-
-      if (stockError) {
-        toast.error('Failed to update water stock');
-        setSubmitting(false);
-        return;
-      }
-
-      // Create expense for water taken
-      if (waterCategoryId && waterStock.unit_price && waterStock.unit_price > 0) {
-        const waterCost = waterDifference * waterStock.unit_price;
-        const { error: expenseError } = await supabase.from('expenses').insert({
-          trip_id: selectedTrip.id,
-          category_id: waterCategoryId,
-          submitted_by: profile?.id,
-          amount: waterCost,
-          expense_date: new Date().toISOString().split('T')[0],
-          description: `Water: ${waterDifference} ${waterStock.unit} @ ₹${waterStock.unit_price}/${waterStock.unit}`,
-          status: 'approved', // Auto-approve water expenses from stock
+        const { error: txError } = await supabase.from('stock_transactions').insert({
+          stock_item_id: waterStock.id,
+          transaction_type: 'remove' as const,
+          quantity_change: waterDifference,
+          previous_quantity: waterStock.quantity,
+          new_quantity: waterStock.quantity - waterDifference,
+          notes: `Trip ${selectedTrip.trip_number} - Driver pickup${previousWaterQty > 0 ? ' (additional)' : ''}`,
+          created_by: profile?.id,
         });
 
-        if (expenseError) {
-          console.error('Failed to create water expense:', expenseError);
-          // Don't block the flow, just log the error
+        if (txError) {
+          toast.error('Failed to record water pickup');
+          setSubmitting(false);
+          return;
+        }
+
+        const { error: stockError } = await supabase
+          .from('stock_items')
+          .update({ 
+            quantity: waterStock.quantity - waterDifference,
+            last_updated_by: profile?.id,
+          })
+          .eq('id', waterStock.id);
+
+        if (stockError) {
+          toast.error('Failed to update water stock');
+          setSubmitting(false);
+          return;
+        }
+
+        if (waterCategoryId && waterStock.unit_price && waterStock.unit_price > 0) {
+          const waterCost = waterDifference * waterStock.unit_price;
+          await supabase.from('expenses').insert({
+            trip_id: selectedTrip.id,
+            category_id: waterCategoryId,
+            submitted_by: profile?.id,
+            amount: waterCost,
+            expense_date: new Date().toISOString().split('T')[0],
+            description: `Water: ${waterDifference} ${waterStock.unit} @ ₹${waterStock.unit_price}/${waterStock.unit}`,
+            status: 'approved',
+          });
+        }
+      } else if (waterStock && waterDifference < 0) {
+        const returnQty = Math.abs(waterDifference);
+        
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('user_id', user!.id)
+          .single();
+
+        const { error: txError } = await supabase.from('stock_transactions').insert({
+          stock_item_id: waterStock.id,
+          transaction_type: 'add' as const,
+          quantity_change: returnQty,
+          previous_quantity: waterStock.quantity,
+          new_quantity: waterStock.quantity + returnQty,
+          notes: `Trip ${selectedTrip.trip_number} - Driver returned water`,
+          created_by: profile?.id,
+        });
+
+        if (txError) {
+          toast.error('Failed to record water return');
+          setSubmitting(false);
+          return;
+        }
+
+        const { error: stockError } = await supabase
+          .from('stock_items')
+          .update({ 
+            quantity: waterStock.quantity + returnQty,
+            last_updated_by: profile?.id,
+          })
+          .eq('id', waterStock.id);
+
+        if (stockError) {
+          toast.error('Failed to update water stock');
+          setSubmitting(false);
+          return;
         }
       }
-    } else if (waterStock && waterDifference < 0) {
-      // Returning water (reduced quantity) - add back to stock
-      const returnQty = Math.abs(waterDifference);
-      
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('id')
-        .eq('user_id', user!.id)
-        .single();
 
-      const { error: txError } = await supabase.from('stock_transactions').insert({
-        stock_item_id: waterStock.id,
-        transaction_type: 'add' as const,
-        quantity_change: returnQty,
-        previous_quantity: waterStock.quantity,
-        new_quantity: waterStock.quantity + returnQty,
-        notes: `Trip ${selectedTrip.trip_number} - Driver returned water`,
-        created_by: profile?.id,
-      });
+      const tripUpdateData: Record<string, number | null> = {
+        ...updateData,
+        water_taken: newWaterQty,
+      };
 
-      if (txError) {
-        toast.error('Failed to record water return');
-        setSubmitting(false);
-        return;
+      const { error } = await supabase
+        .from('trips')
+        .update(tripUpdateData)
+        .eq('id', selectedTrip.id);
+
+      if (error) {
+        toast.error('Failed to update odometer readings');
+      } else {
+        const waterMsg = waterDifference !== 0 
+          ? ` | Water: ${waterDifference > 0 ? '+' : ''}${waterDifference}` 
+          : '';
+        toast.success(`Odometer readings updated${waterMsg}`);
+        setDialogOpen(false);
+        fetchTrips();
+        fetchWaterStock();
       }
-
-      const { error: stockError } = await supabase
-        .from('stock_items')
-        .update({ 
-          quantity: waterStock.quantity + returnQty,
-          last_updated_by: profile?.id,
-        })
-        .eq('id', waterStock.id);
-
-      if (stockError) {
-        toast.error('Failed to update water stock');
-        setSubmitting(false);
-        return;
-      }
-    }
-
-    // Update trip with odometer and water_taken
-    const tripUpdateData: Record<string, number | null> = {
-      ...updateData,
-      water_taken: newWaterQty,
-    };
-
-    const { error } = await supabase
-      .from('trips')
-      .update(tripUpdateData)
-      .eq('id', selectedTrip.id);
-
-    if (error) {
-      toast.error('Failed to update odometer readings');
-    } else {
-      const waterMsg = waterDifference !== 0 
-        ? ` | Water: ${waterDifference > 0 ? '+' : ''}${waterDifference}` 
-        : '';
-      toast.success(`Odometer readings updated${waterMsg}`);
-      setDialogOpen(false);
-      fetchTrips();
-      fetchWaterStock(); // Refresh stock
     }
     setSubmitting(false);
   }
@@ -328,21 +361,31 @@ export default function DriverTrips() {
   };
 
   async function handleStartTrip(trip: Trip) {
-    const { error } = await supabase
-      .from('trips')
-      .update({ status: 'in_progress' })
-      .eq('id', trip.id);
-
-    if (error) {
-      toast.error('Failed to start trip');
+    if (USE_PYTHON_API) {
+      const { error } = await apiClient.put(`/trips/${trip.id}`, { status: 'in_progress' });
+      if (error) {
+        toast.error('Failed to start trip');
+      } else {
+        toast.success('Trip started successfully');
+        fetchTrips();
+      }
     } else {
-      toast.success('Trip started successfully');
-      fetchTrips();
+      const supabase = await getCloudClient();
+      const { error } = await supabase
+        .from('trips')
+        .update({ status: 'in_progress' })
+        .eq('id', trip.id);
+
+      if (error) {
+        toast.error('Failed to start trip');
+      } else {
+        toast.success('Trip started successfully');
+        fetchTrips();
+      }
     }
   }
 
   async function handleCompleteTrip(trip: Trip) {
-    // Validate odometer readings before completing
     if (!trip.odometer_start || !trip.odometer_end) {
       toast.error('Please enter odometer readings before completing the trip');
       return;
@@ -353,19 +396,34 @@ export default function DriverTrips() {
       return;
     }
 
-    const { error } = await supabase
-      .from('trips')
-      .update({ 
+    if (USE_PYTHON_API) {
+      const { error } = await apiClient.put(`/trips/${trip.id}`, { 
         status: 'completed',
         end_date: new Date().toISOString()
-      })
-      .eq('id', trip.id);
+      });
 
-    if (error) {
-      toast.error('Failed to complete trip');
+      if (error) {
+        toast.error('Failed to complete trip');
+      } else {
+        toast.success('Trip completed successfully');
+        fetchTrips();
+      }
     } else {
-      toast.success('Trip completed successfully');
-      fetchTrips();
+      const supabase = await getCloudClient();
+      const { error } = await supabase
+        .from('trips')
+        .update({ 
+          status: 'completed',
+          end_date: new Date().toISOString()
+        })
+        .eq('id', trip.id);
+
+      if (error) {
+        toast.error('Failed to complete trip');
+      } else {
+        toast.success('Trip completed successfully');
+        fetchTrips();
+      }
     }
   }
 
