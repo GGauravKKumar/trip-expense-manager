@@ -17,3 +17,32 @@ export async function getCloudClient() {
   }
   return cloudClient;
 }
+
+/**
+ * Helper type for Supabase-like response
+ */
+export interface DataResponse<T> {
+  data: T | null;
+  error: Error | null;
+}
+
+/**
+ * Execute a database query that works in both Python API and Cloud modes.
+ * For Python mode, pass the apiPath. For Cloud mode, pass the queryFn.
+ */
+export async function dbQuery<T>(
+  apiPath: string,
+  cloudQueryFn: (client: any) => Promise<{ data: T | null; error: any }>
+): Promise<DataResponse<T>> {
+  if (USE_PYTHON_API) {
+    const { apiClient } = await import('@/lib/api-client');
+    return apiClient.get<T>(apiPath);
+  } else {
+    const client = await getCloudClient();
+    const result = await cloudQueryFn(client);
+    return {
+      data: result.data,
+      error: result.error ? new Error(result.error.message || 'Query failed') : null,
+    };
+  }
+}

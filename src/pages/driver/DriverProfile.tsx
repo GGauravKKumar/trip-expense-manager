@@ -8,7 +8,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { supabase } from '@/integrations/supabase/client';
+import { USE_PYTHON_API, getCloudClient } from '@/lib/backend';
+import { apiClient } from '@/lib/api-client';
 import { useAuth } from '@/hooks/useAuth';
 import { Profile } from '@/types/database';
 import { 
@@ -46,23 +47,40 @@ export default function DriverProfile() {
   }, [user]);
 
   async function fetchProfile() {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('user_id', user!.id)
-      .single();
+    if (USE_PYTHON_API) {
+      const { data, error } = await apiClient.get<Profile>('/drivers/me');
+      if (error) {
+        toast.error('Failed to fetch profile');
+      } else if (data) {
+        setProfile(data);
+        setFormData({
+          full_name: data.full_name || '',
+          phone: data.phone || '',
+          address: data.address || '',
+          license_number: data.license_number || '',
+          license_expiry: data.license_expiry || '',
+        });
+      }
+    } else {
+      const supabase = await getCloudClient();
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('user_id', user!.id)
+        .single();
 
-    if (error) {
-      toast.error('Failed to fetch profile');
-    } else if (data) {
-      setProfile(data as Profile);
-      setFormData({
-        full_name: data.full_name || '',
-        phone: data.phone || '',
-        address: data.address || '',
-        license_number: data.license_number || '',
-        license_expiry: data.license_expiry || '',
-      });
+      if (error) {
+        toast.error('Failed to fetch profile');
+      } else if (data) {
+        setProfile(data as Profile);
+        setFormData({
+          full_name: data.full_name || '',
+          phone: data.phone || '',
+          address: data.address || '',
+          license_number: data.license_number || '',
+          license_expiry: data.license_expiry || '',
+        });
+      }
     }
     setLoading(false);
   }
@@ -72,21 +90,38 @@ export default function DriverProfile() {
     if (!profile) return;
     setSaving(true);
 
-    const { error } = await supabase
-      .from('profiles')
-      .update({
+    if (USE_PYTHON_API) {
+      const { error } = await apiClient.put(`/drivers/${profile.id}`, {
         full_name: formData.full_name,
         phone: formData.phone || null,
         address: formData.address || null,
         license_number: formData.license_number || null,
         license_expiry: formData.license_expiry || null,
-      })
-      .eq('id', profile.id);
+      });
 
-    if (error) {
-      toast.error('Failed to update profile');
+      if (error) {
+        toast.error('Failed to update profile');
+      } else {
+        toast.success('Profile updated successfully');
+      }
     } else {
-      toast.success('Profile updated successfully');
+      const supabase = await getCloudClient();
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          full_name: formData.full_name,
+          phone: formData.phone || null,
+          address: formData.address || null,
+          license_number: formData.license_number || null,
+          license_expiry: formData.license_expiry || null,
+        })
+        .eq('id', profile.id);
+
+      if (error) {
+        toast.error('Failed to update profile');
+      } else {
+        toast.success('Profile updated successfully');
+      }
     }
     setSaving(false);
   }
