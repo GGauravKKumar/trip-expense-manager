@@ -105,6 +105,28 @@ async def list_expenses(
     return [expense_to_dict(e) for e in expenses]
 
 
+@router.get("/my")
+async def get_my_expenses(
+    status: Optional[str] = None,
+    limit: int = Query(100, le=1000),
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get current user's expenses (for drivers)"""
+    query = db.query(Expense).options(
+        joinedload(Expense.category),
+        joinedload(Expense.trip),
+        joinedload(Expense.submitter)
+    ).filter(Expense.submitted_by == uuid.UUID(current_user.profile_id))
+    
+    if status:
+        query = query.filter(Expense.status == ExpenseStatus(status))
+    
+    expenses = query.order_by(Expense.created_at.desc()).limit(limit).all()
+    
+    return [expense_to_dict(e) for e in expenses]
+
+
 @router.get("/categories")
 async def list_expense_categories(
     current_user: TokenData = Depends(get_current_user),
