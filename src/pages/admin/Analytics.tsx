@@ -7,7 +7,8 @@ import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { Skeleton } from '@/components/ui/skeleton';
-import { supabase } from '@/integrations/supabase/client';
+import { USE_PYTHON_API, getCloudClient } from '@/lib/backend';
+import { apiClient } from '@/lib/api-client';
 import { 
   Loader2, TrendingUp, TrendingDown, CalendarIcon, Download, BarChart3,
   DollarSign, Percent, CheckCircle, Fuel, Bus, MapPin, Users
@@ -143,54 +144,90 @@ export default function Analytics() {
     const prevStartStr = format(previousStart, 'yyyy-MM-dd');
     const prevEndStr = format(previousEnd, 'yyyy-MM-dd');
 
-    // Fetch fuel price
-    const { data: fuelSetting } = await supabase
-      .from('admin_settings')
-      .select('value')
-      .eq('key', 'fuel_price_per_liter')
-      .maybeSingle();
-    const fuelPricePerLiter = fuelSetting?.value ? parseFloat(fuelSetting.value) : 90;
+    let fuelPricePerLiter = 90;
+    let trips: any[] = [];
+    let previousTrips: any[] = [];
+    let expenseCategories: any[] = [];
+    let expenses: any[] = [];
 
-    // Fetch all trips in date range
-    const { data: trips } = await supabase
-      .from('trips')
-      .select(`
-        *,
-        bus:buses(id, registration_number, bus_name),
-        driver:profiles(id, full_name),
-        route:routes(id, route_name)
-      `)
-      .gte('start_date', startDateStr)
-      .lte('start_date', endDateStr + 'T23:59:59');
+    try {
+      if (USE_PYTHON_API) {
+        // Fetch data from Python API
+        const [settingsRes, tripsRes, prevTripsRes, categoriesRes, expensesRes] = await Promise.all([
+          apiClient.get<any[]>('/settings'),
+          apiClient.get<any[]>(`/trips?from_date=${startDateStr}&to_date=${endDateStr}`),
+          apiClient.get<any[]>(`/trips?status=completed&from_date=${prevStartStr}&to_date=${prevEndStr}`),
+          apiClient.get<any[]>('/expense-categories'),
+          apiClient.get<any[]>('/expenses?status=approved'),
+        ]);
 
-    // Fetch previous period trips for comparison
-    const { data: previousTrips } = await supabase
-      .from('trips')
-      .select('total_revenue, return_total_revenue')
-      .eq('status', 'completed')
-      .gte('start_date', prevStartStr)
-      .lte('start_date', prevEndStr + 'T23:59:59');
+        const fuelSetting = settingsRes.data?.find((s: any) => s.key === 'fuel_price_per_liter');
+        fuelPricePerLiter = fuelSetting?.value ? parseFloat(fuelSetting.value) : 90;
+        trips = tripsRes.data || [];
+        previousTrips = prevTripsRes.data || [];
+        expenseCategories = categoriesRes.data || [];
+        expenses = expensesRes.data || [];
+      } else {
+        const supabase = await getCloudClient();
+        
+        // Fetch fuel price
+        const { data: fuelSetting } = await supabase
+          .from('admin_settings')
+          .select('value')
+          .eq('key', 'fuel_price_per_liter')
+          .maybeSingle();
+        fuelPricePerLiter = fuelSetting?.value ? parseFloat(fuelSetting.value) : 90;
 
-    // Fetch expense categories
-    const { data: expenseCategories } = await supabase
-      .from('expense_categories')
-      .select('id, name');
+        // Fetch all trips in date range
+        const { data: tripsData } = await supabase
+          .from('trips')
+          .select(`
+            *,
+            bus:buses(id, registration_number, bus_name),
+            driver:profiles(id, full_name),
+            route:routes(id, route_name)
+          `)
+          .gte('start_date', startDateStr)
+          .lte('start_date', endDateStr + 'T23:59:59');
+        trips = tripsData || [];
+
+        // Fetch previous period trips for comparison
+        const { data: prevTripsData } = await supabase
+          .from('trips')
+          .select('total_revenue, return_total_revenue')
+          .eq('status', 'completed')
+          .gte('start_date', prevStartStr)
+          .lte('start_date', prevEndStr + 'T23:59:59');
+        previousTrips = prevTripsData || [];
+
+        // Fetch expense categories
+        const { data: categoriesData } = await supabase
+          .from('expense_categories')
+          .select('id, name');
+        expenseCategories = categoriesData || [];
+
+        // Fetch approved expenses
+        const { data: expensesData } = await supabase
+          .from('expenses')
+          .select('trip_id, amount, category_id, fuel_quantity, expense_date')
+          .eq('status', 'approved');
+        expenses = expensesData || [];
+      }
+    } catch (err) {
+      console.error('Failed to fetch analytics data:', err);
+      setLoading(false);
+      return;
+    }
     
     const fuelCategoryIds = new Set(
-      expenseCategories?.filter(c => 
+      expenseCategories?.filter((c: any) => 
         c.name.toLowerCase().includes('diesel') || 
         c.name.toLowerCase().includes('fuel') || 
         c.name.toLowerCase().includes('petrol')
-      ).map(c => c.id) || []
+      ).map((c: any) => c.id) || []
     );
 
-    // Fetch approved expenses
-    const { data: expenses } = await supabase
-      .from('expenses')
-      .select('trip_id, amount, category_id, fuel_quantity, expense_date')
-      .eq('status', 'approved');
-
-    if (!trips) {
+    if (!trips || trips.length === 0) {
       setLoading(false);
       return;
     }

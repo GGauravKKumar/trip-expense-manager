@@ -7,7 +7,8 @@ import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { supabase } from '@/integrations/supabase/client';
+import { USE_PYTHON_API, getCloudClient } from '@/lib/backend';
+import { apiClient } from '@/lib/api-client';
 import { 
   FileText, Download, Calendar, TrendingUp, TrendingDown, 
   IndianRupee, ArrowRight, ArrowLeft, Loader2, PieChart
@@ -99,15 +100,28 @@ export default function GSTReport() {
   async function fetchData() {
     setLoading(true);
 
-    // Fetch GST percentage from settings
-    const { data: gstSetting } = await supabase
-      .from('admin_settings')
-      .select('value')
-      .eq('key', 'default_gst_percentage')
-      .single();
-    
-    if (gstSetting?.value) {
-      setGstPercentage(parseFloat(gstSetting.value));
+    try {
+      if (USE_PYTHON_API) {
+        const { data: settings } = await apiClient.get<any[]>('/settings');
+        const gstSetting = settings?.find((s: any) => s.key === 'default_gst_percentage');
+        if (gstSetting?.value) {
+          setGstPercentage(parseFloat(gstSetting.value));
+        }
+      } else {
+        const supabase = await getCloudClient();
+        // Fetch GST percentage from settings
+        const { data: gstSetting } = await supabase
+          .from('admin_settings')
+          .select('value')
+          .eq('key', 'default_gst_percentage')
+          .single();
+        
+        if (gstSetting?.value) {
+          setGstPercentage(parseFloat(gstSetting.value));
+        }
+      }
+    } catch (err) {
+      console.error('Failed to fetch GST settings:', err);
     }
 
     await Promise.all([
@@ -122,51 +136,87 @@ export default function GSTReport() {
   }
 
   async function fetchInputGST() {
-    // 1. GST from approved repair records
-    const { data: repairData } = await supabase
-      .from('repair_records')
-      .select('gst_amount, gst_applicable')
-      .eq('status', 'approved')
-      .eq('gst_applicable', true)
-      .gte('repair_date', startDate)
-      .lte('repair_date', endDate);
-    
-    const repairGST = repairData?.reduce((sum: number, r: { gst_amount: number | null }) => 
-      sum + (Number(r.gst_amount) || 0), 0) || 0;
+    let repairGST = 0;
+    let stockGST = 0;
+    let purchaseInvoiceGST = 0;
 
-    // 2. GST from stock used in trips (water)
-    const { data: tripData } = await supabase
-      .from('trips')
-      .select('water_taken')
-      .eq('status', 'completed')
-      .gte('start_date', startDate)
-      .lte('start_date', endDate);
-    
-    // Fetch stock item GST rate for water
-    const { data: stockItem } = await supabase
-      .from('stock_items')
-      .select('unit_price, gst_percentage')
-      .ilike('item_name', '%water%')
-      .maybeSingle();
-    
-    const waterTaken = tripData?.reduce((sum: number, t: { water_taken: number | null }) => 
-      sum + (Number(t.water_taken) || 0), 0) || 0;
-    const stockGSTRate = (stockItem?.gst_percentage || 0) / 100;
-    const stockValue = waterTaken * (stockItem?.unit_price || 0);
-    // Calculate GST from inclusive price: GST = value * rate / (1 + rate)
-    const stockGST = stockGSTRate > 0 ? stockValue * stockGSTRate / (1 + stockGSTRate) : 0;
+    try {
+      if (USE_PYTHON_API) {
+        // Fetch repair GST
+        const { data: repairData } = await apiClient.get<any[]>(`/repairs?status=approved&from_date=${startDate}&to_date=${endDate}`);
+        repairGST = (repairData || [])
+          .filter((r: any) => r.gst_applicable)
+          .reduce((sum: number, r: any) => sum + (Number(r.gst_amount) || 0), 0);
 
-    // 3. GST from purchase invoices (direction = 'purchase')
-    const { data: purchaseInvoices } = await supabase
-      .from('invoices')
-      .select('gst_amount')
-      .eq('direction', 'purchase')
-      .gte('invoice_date', startDate)
-      .lte('invoice_date', endDate)
-      .neq('status', 'cancelled');
-    
-    const purchaseInvoiceGST = purchaseInvoices?.reduce((sum: number, inv: { gst_amount: number }) => 
-      sum + (Number(inv.gst_amount) || 0), 0) || 0;
+        // Fetch trip water data
+        const { data: tripData } = await apiClient.get<any[]>(`/trips?status=completed&from_date=${startDate}&to_date=${endDate}`);
+        
+        // Fetch stock item GST rate for water
+        const { data: stockItems } = await apiClient.get<any[]>('/stock');
+        const waterStock = stockItems?.find((s: any) => s.item_name.toLowerCase().includes('water'));
+        
+        const waterTaken = (tripData || []).reduce((sum: number, t: any) => sum + (Number(t.water_taken) || 0), 0);
+        const stockGSTRate = (waterStock?.gst_percentage || 0) / 100;
+        const stockValue = waterTaken * (waterStock?.unit_price || 0);
+        stockGST = stockGSTRate > 0 ? stockValue * stockGSTRate / (1 + stockGSTRate) : 0;
+
+        // Fetch purchase invoices GST
+        const { data: invoicesData } = await apiClient.get<any[]>('/invoices?direction=purchase');
+        purchaseInvoiceGST = (invoicesData || [])
+          .filter((inv: any) => inv.status !== 'cancelled' && 
+            inv.invoice_date >= startDate && inv.invoice_date <= endDate)
+          .reduce((sum: number, inv: any) => sum + (Number(inv.gst_amount) || 0), 0);
+      } else {
+        const supabase = await getCloudClient();
+        
+        // 1. GST from approved repair records
+        const { data: repairData } = await supabase
+          .from('repair_records')
+          .select('gst_amount, gst_applicable')
+          .eq('status', 'approved')
+          .eq('gst_applicable', true)
+          .gte('repair_date', startDate)
+          .lte('repair_date', endDate);
+        
+        repairGST = repairData?.reduce((sum: number, r: { gst_amount: number | null }) => 
+          sum + (Number(r.gst_amount) || 0), 0) || 0;
+
+        // 2. GST from stock used in trips (water)
+        const { data: tripData } = await supabase
+          .from('trips')
+          .select('water_taken')
+          .eq('status', 'completed')
+          .gte('start_date', startDate)
+          .lte('start_date', endDate);
+        
+        // Fetch stock item GST rate for water
+        const { data: stockItem } = await supabase
+          .from('stock_items')
+          .select('unit_price, gst_percentage')
+          .ilike('item_name', '%water%')
+          .maybeSingle();
+        
+        const waterTaken = tripData?.reduce((sum: number, t: { water_taken: number | null }) => 
+          sum + (Number(t.water_taken) || 0), 0) || 0;
+        const stockGSTRate = (stockItem?.gst_percentage || 0) / 100;
+        const stockValue = waterTaken * (stockItem?.unit_price || 0);
+        stockGST = stockGSTRate > 0 ? stockValue * stockGSTRate / (1 + stockGSTRate) : 0;
+
+        // 3. GST from purchase invoices (direction = 'purchase')
+        const { data: purchaseInvoices } = await supabase
+          .from('invoices')
+          .select('gst_amount')
+          .eq('direction', 'purchase')
+          .gte('invoice_date', startDate)
+          .lte('invoice_date', endDate)
+          .neq('status', 'cancelled');
+        
+        purchaseInvoiceGST = purchaseInvoices?.reduce((sum: number, inv: { gst_amount: number }) => 
+          sum + (Number(inv.gst_amount) || 0), 0) || 0;
+      }
+    } catch (err) {
+      console.error('Failed to fetch input GST data:', err);
+    }
 
     // Total Input GST (repairs + stock + purchase invoices)
     const totalInputGST = repairGST + stockGST + purchaseInvoiceGST;
@@ -194,43 +244,71 @@ export default function GSTReport() {
   }
 
   async function fetchInvoiceGST() {
-    // Only fetch sales invoices for output GST calculation
-    const { data } = await supabase
-      .from('invoices')
-      .select('id, invoice_number, customer_name, invoice_date, subtotal, gst_amount, total_amount, direction')
-      .or('direction.eq.sales,direction.is.null') // Include legacy invoices without direction
-      .gte('invoice_date', startDate)
-      .lte('invoice_date', endDate)
-      .neq('status', 'cancelled')
-      .order('invoice_date', { ascending: false });
+    try {
+      if (USE_PYTHON_API) {
+        const { data } = await apiClient.get<any[]>('/invoices');
+        const salesInvoices = (data || []).filter((inv: any) => 
+          (inv.direction === 'sales' || !inv.direction) &&
+          inv.status !== 'cancelled' &&
+          inv.invoice_date >= startDate && inv.invoice_date <= endDate
+        );
+        setInvoices(salesInvoices as InvoiceGSTData[]);
+      } else {
+        const supabase = await getCloudClient();
+        // Only fetch sales invoices for output GST calculation
+        const { data } = await supabase
+          .from('invoices')
+          .select('id, invoice_number, customer_name, invoice_date, subtotal, gst_amount, total_amount, direction')
+          .or('direction.eq.sales,direction.is.null') // Include legacy invoices without direction
+          .gte('invoice_date', startDate)
+          .lte('invoice_date', endDate)
+          .neq('status', 'cancelled')
+          .order('invoice_date', { ascending: false });
 
-    setInvoices((data || []) as InvoiceGSTData[]);
+        setInvoices((data || []) as InvoiceGSTData[]);
+      }
+    } catch (err) {
+      console.error('Failed to fetch invoice GST:', err);
+    }
   }
 
   async function fetchTripGST() {
-    const { data } = await supabase
-      .from('trips')
-      .select('id, trip_number, trip_date, total_revenue, return_total_revenue, gst_percentage')
-      .gte('start_date', startDate)
-      .lte('start_date', endDate)
-      .eq('status', 'completed');
+    try {
+      let data: any[] = [];
+      
+      if (USE_PYTHON_API) {
+        const result = await apiClient.get<any[]>(`/trips?status=completed&from_date=${startDate}&to_date=${endDate}`);
+        data = result.data || [];
+      } else {
+        const supabase = await getCloudClient();
+        const result = await supabase
+          .from('trips')
+          .select('id, trip_number, trip_date, total_revenue, return_total_revenue, gst_percentage')
+          .gte('start_date', startDate)
+          .lte('start_date', endDate)
+          .eq('status', 'completed');
+        data = result.data || [];
+      }
 
-    if (data) {
-      const tripData: TripGSTData[] = data.map(trip => {
-        const totalRev = (Number(trip.total_revenue) || 0) + (Number(trip.return_total_revenue) || 0);
-        const gstRate = trip.gst_percentage || 18;
-        const gstAmount = totalRev - (totalRev / (1 + gstRate / 100));
-        
-        return {
-          id: trip.id,
-          trip_number: trip.trip_number,
-          trip_date: trip.trip_date || '',
-          total_revenue: totalRev,
-          gst_amount: gstAmount,
-          net_revenue: totalRev - gstAmount,
-        };
-      });
-      setTripGST(tripData);
+      if (data) {
+        const tripData: TripGSTData[] = data.map((trip: any) => {
+          const totalRev = (Number(trip.total_revenue) || 0) + (Number(trip.return_total_revenue) || 0);
+          const gstRate = trip.gst_percentage || 18;
+          const gstAmount = totalRev - (totalRev / (1 + gstRate / 100));
+          
+          return {
+            id: trip.id,
+            trip_number: trip.trip_number,
+            trip_date: trip.trip_date || '',
+            total_revenue: totalRev,
+            gst_amount: gstAmount,
+            net_revenue: totalRev - gstAmount,
+          };
+        });
+        setTripGST(tripData);
+      }
+    } catch (err) {
+      console.error('Failed to fetch trip GST:', err);
     }
   }
 
