@@ -18,7 +18,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { supabase } from '@/integrations/supabase/client';
+import { USE_PYTHON_API, getCloudClient } from '@/lib/backend';
+import { apiClient } from '@/lib/api-client';
 import { StockItem, StockTransaction } from '@/types/database';
 import { Plus, Pencil, Loader2, Trash2, Package, TrendingDown, TrendingUp, History, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
@@ -91,31 +92,59 @@ export default function StockManagement() {
   }, []);
 
   async function fetchStockItems() {
-    const { data, error } = await supabase
-      .from('stock_items')
-      .select('*')
-      .order('item_name');
+    try {
+      if (USE_PYTHON_API) {
+        const { data, error } = await apiClient.get<StockItem[]>('/stock');
+        if (error) {
+          toast.error('Failed to fetch stock items');
+        } else {
+          setStockItems(data || []);
+        }
+      } else {
+        const supabase = await getCloudClient();
+        const { data, error } = await supabase
+          .from('stock_items')
+          .select('*')
+          .order('item_name');
 
-    if (error) {
+        if (error) {
+          toast.error('Failed to fetch stock items');
+        } else {
+          setStockItems(data as StockItem[]);
+        }
+      }
+    } catch (err) {
       toast.error('Failed to fetch stock items');
-    } else {
-      setStockItems(data as StockItem[]);
     }
     setLoading(false);
   }
 
   async function fetchTransactions(itemId: string) {
-    const { data, error } = await supabase
-      .from('stock_transactions')
-      .select('*')
-      .eq('stock_item_id', itemId)
-      .order('created_at', { ascending: false })
-      .limit(50);
+    try {
+      if (USE_PYTHON_API) {
+        const { data, error } = await apiClient.get<StockTransaction[]>(`/stock/transactions?stock_item_id=${itemId}&limit=50`);
+        if (error) {
+          toast.error('Failed to fetch transaction history');
+        } else {
+          setTransactions(data || []);
+        }
+      } else {
+        const supabase = await getCloudClient();
+        const { data, error } = await supabase
+          .from('stock_transactions')
+          .select('*')
+          .eq('stock_item_id', itemId)
+          .order('created_at', { ascending: false })
+          .limit(50);
 
-    if (error) {
+        if (error) {
+          toast.error('Failed to fetch transaction history');
+        } else {
+          setTransactions(data as StockTransaction[]);
+        }
+      }
+    } catch (err) {
       toast.error('Failed to fetch transaction history');
-    } else {
-      setTransactions(data as StockTransaction[]);
     }
   }
 
@@ -167,47 +196,84 @@ export default function StockManagement() {
     e.preventDefault();
     setSubmitting(true);
 
-    // Get current user's profile ID
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('id')
-      .eq('user_id', user?.id)
-      .single();
+    try {
+      if (USE_PYTHON_API) {
+        const payload = {
+          item_name: formData.item_name,
+          quantity: formData.quantity,
+          low_stock_threshold: formData.low_stock_threshold,
+          unit: formData.unit,
+          unit_price: formData.unit_price,
+          gst_percentage: formData.gst_percentage,
+          notes: formData.notes || null,
+        };
 
-    const payload = {
-      item_name: formData.item_name,
-      quantity: formData.quantity,
-      low_stock_threshold: formData.low_stock_threshold,
-      unit: formData.unit,
-      unit_price: formData.unit_price,
-      gst_percentage: formData.gst_percentage,
-      notes: formData.notes || null,
-      last_updated_by: profile?.id || null,
-    };
-
-    if (editingItem) {
-      const { error } = await supabase
-        .from('stock_items')
-        .update(payload)
-        .eq('id', editingItem.id);
-
-      if (error) {
-        toast.error('Failed to update stock item');
+        if (editingItem) {
+          const { error } = await apiClient.put(`/stock/${editingItem.id}`, payload);
+          if (error) {
+            toast.error('Failed to update stock item');
+          } else {
+            toast.success('Stock item updated successfully');
+            setDialogOpen(false);
+            fetchStockItems();
+          }
+        } else {
+          const { error } = await apiClient.post('/stock', payload);
+          if (error) {
+            toast.error('Failed to add stock item');
+          } else {
+            toast.success('Stock item added successfully');
+            setDialogOpen(false);
+            fetchStockItems();
+          }
+        }
       } else {
-        toast.success('Stock item updated successfully');
-        setDialogOpen(false);
-        fetchStockItems();
-      }
-    } else {
-      const { error } = await supabase.from('stock_items').insert(payload);
+        const supabase = await getCloudClient();
+        // Get current user's profile ID
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('user_id', user?.id)
+          .single();
 
-      if (error) {
-        toast.error(error.message || 'Failed to add stock item');
-      } else {
-        toast.success('Stock item added successfully');
-        setDialogOpen(false);
-        fetchStockItems();
+        const payload = {
+          item_name: formData.item_name,
+          quantity: formData.quantity,
+          low_stock_threshold: formData.low_stock_threshold,
+          unit: formData.unit,
+          unit_price: formData.unit_price,
+          gst_percentage: formData.gst_percentage,
+          notes: formData.notes || null,
+          last_updated_by: profile?.id || null,
+        };
+
+        if (editingItem) {
+          const { error } = await supabase
+            .from('stock_items')
+            .update(payload)
+            .eq('id', editingItem.id);
+
+          if (error) {
+            toast.error('Failed to update stock item');
+          } else {
+            toast.success('Stock item updated successfully');
+            setDialogOpen(false);
+            fetchStockItems();
+          }
+        } else {
+          const { error } = await supabase.from('stock_items').insert(payload);
+
+          if (error) {
+            toast.error(error.message || 'Failed to add stock item');
+          } else {
+            toast.success('Stock item added successfully');
+            setDialogOpen(false);
+            fetchStockItems();
+          }
+        }
       }
+    } catch (err) {
+      toast.error('Failed to save stock item');
     }
     setSubmitting(false);
   }
@@ -217,58 +283,80 @@ export default function StockManagement() {
     if (!selectedItem) return;
     setSubmitting(true);
 
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('id')
-      .eq('user_id', user?.id)
-      .single();
+    try {
+      if (USE_PYTHON_API) {
+        const payload = {
+          quantity_change: Math.abs(updateData.quantity_change),
+          transaction_type: updateData.transaction_type,
+          notes: updateData.notes || null,
+        };
 
-    const quantityChange = updateData.transaction_type === 'remove' 
-      ? -Math.abs(updateData.quantity_change)
-      : Math.abs(updateData.quantity_change);
+        const { error } = await apiClient.post(`/stock/${selectedItem.id}/adjust`, payload);
+        if (error) {
+          toast.error(error.message || 'Failed to update stock');
+        } else {
+          toast.success('Stock updated successfully');
+          setUpdateDialogOpen(false);
+          fetchStockItems();
+        }
+      } else {
+        const supabase = await getCloudClient();
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('user_id', user?.id)
+          .single();
 
-    const newQuantity = selectedItem.quantity + quantityChange;
+        const quantityChange = updateData.transaction_type === 'remove' 
+          ? -Math.abs(updateData.quantity_change)
+          : Math.abs(updateData.quantity_change);
 
-    if (newQuantity < 0) {
-      toast.error('Cannot reduce stock below 0');
-      setSubmitting(false);
-      return;
-    }
+        const newQuantity = selectedItem.quantity + quantityChange;
 
-    // Create transaction record
-    const { error: transactionError } = await supabase
-      .from('stock_transactions')
-      .insert({
-        stock_item_id: selectedItem.id,
-        transaction_type: updateData.transaction_type,
-        quantity_change: quantityChange,
-        previous_quantity: selectedItem.quantity,
-        new_quantity: newQuantity,
-        notes: updateData.notes || null,
-        created_by: profile?.id || null,
-      });
+        if (newQuantity < 0) {
+          toast.error('Cannot reduce stock below 0');
+          setSubmitting(false);
+          return;
+        }
 
-    if (transactionError) {
-      toast.error('Failed to record transaction');
-      setSubmitting(false);
-      return;
-    }
+        // Create transaction record
+        const { error: transactionError } = await supabase
+          .from('stock_transactions')
+          .insert({
+            stock_item_id: selectedItem.id,
+            transaction_type: updateData.transaction_type,
+            quantity_change: quantityChange,
+            previous_quantity: selectedItem.quantity,
+            new_quantity: newQuantity,
+            notes: updateData.notes || null,
+            created_by: profile?.id || null,
+          });
 
-    // Update stock quantity
-    const { error } = await supabase
-      .from('stock_items')
-      .update({
-        quantity: newQuantity,
-        last_updated_by: profile?.id || null,
-      })
-      .eq('id', selectedItem.id);
+        if (transactionError) {
+          toast.error('Failed to record transaction');
+          setSubmitting(false);
+          return;
+        }
 
-    if (error) {
+        // Update stock quantity
+        const { error } = await supabase
+          .from('stock_items')
+          .update({
+            quantity: newQuantity,
+            last_updated_by: profile?.id || null,
+          })
+          .eq('id', selectedItem.id);
+
+        if (error) {
+          toast.error('Failed to update stock');
+        } else {
+          toast.success('Stock updated successfully');
+          setUpdateDialogOpen(false);
+          fetchStockItems();
+        }
+      }
+    } catch (err) {
       toast.error('Failed to update stock');
-    } else {
-      toast.success('Stock updated successfully');
-      setUpdateDialogOpen(false);
-      fetchStockItems();
     }
     setSubmitting(false);
   }
@@ -282,16 +370,31 @@ export default function StockManagement() {
     if (!deletingItem) return;
 
     setDeleting(true);
-    const { error } = await supabase
-      .from('stock_items')
-      .delete()
-      .eq('id', deletingItem.id);
+    try {
+      if (USE_PYTHON_API) {
+        const { error } = await apiClient.delete(`/stock/${deletingItem.id}`);
+        if (error) {
+          toast.error('Failed to delete stock item');
+        } else {
+          toast.success('Stock item deleted successfully');
+          fetchStockItems();
+        }
+      } else {
+        const supabase = await getCloudClient();
+        const { error } = await supabase
+          .from('stock_items')
+          .delete()
+          .eq('id', deletingItem.id);
 
-    if (error) {
+        if (error) {
+          toast.error('Failed to delete stock item');
+        } else {
+          toast.success('Stock item deleted successfully');
+          fetchStockItems();
+        }
+      }
+    } catch (err) {
       toast.error('Failed to delete stock item');
-    } else {
-      toast.success('Stock item deleted successfully');
-      fetchStockItems();
     }
 
     setDeleting(false);

@@ -119,6 +119,34 @@ def trip_to_dict(trip: Trip) -> dict:
     }
 
 
+@router.get("/my")
+async def get_my_trips(
+    status: Optional[str] = None,
+    from_date: Optional[date] = None,
+    to_date: Optional[date] = None,
+    limit: int = Query(100, le=1000),
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get trips for the current driver"""
+    query = db.query(Trip).options(
+        joinedload(Trip.bus),
+        joinedload(Trip.driver),
+        joinedload(Trip.route)
+    ).filter(Trip.driver_id == uuid.UUID(current_user.profile_id))
+    
+    if status:
+        query = query.filter(Trip.status == TripStatus(status))
+    if from_date:
+        query = query.filter(Trip.trip_date >= from_date)
+    if to_date:
+        query = query.filter(Trip.trip_date <= to_date)
+    
+    trips = query.order_by(Trip.start_date.desc()).limit(limit).all()
+    
+    return [trip_to_dict(t) for t in trips]
+
+
 @router.get("")
 async def list_trips(
     status: Optional[str] = None,
