@@ -8,7 +8,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { supabase } from '@/integrations/supabase/client';
+import { USE_PYTHON_API, getCloudClient } from '@/lib/backend';
+import { apiClient } from '@/lib/api-client';
 import { Loader2, Plus, FileText, Download, Eye, CreditCard, Search, Filter, ArrowUpRight, ArrowDownLeft, Tag } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
@@ -49,16 +50,30 @@ export default function InvoiceManagement() {
 
   async function fetchInvoices() {
     setLoading(true);
-    const { data, error } = await supabase
-      .from('invoices')
-      .select('*')
-      .order('created_at', { ascending: false });
+    try {
+      if (USE_PYTHON_API) {
+        const { data, error } = await apiClient.get<Invoice[]>('/invoices');
+        if (error) {
+          toast.error('Failed to load invoices');
+        } else {
+          setInvoices(data || []);
+        }
+      } else {
+        const supabase = await getCloudClient();
+        const { data, error } = await supabase
+          .from('invoices')
+          .select('*')
+          .order('created_at', { ascending: false });
 
-    if (error) {
+        if (error) {
+          toast.error('Failed to load invoices');
+          console.error(error);
+        } else {
+          setInvoices((data || []) as Invoice[]);
+        }
+      }
+    } catch (err) {
       toast.error('Failed to load invoices');
-      console.error(error);
-    } else {
-      setInvoices((data || []) as Invoice[]);
     }
     setLoading(false);
   }
@@ -115,10 +130,27 @@ export default function InvoiceManagement() {
 
   async function exportToExcel() {
     const invoiceIds = filteredInvoices.map(inv => inv.id);
-    const { data: allLineItems } = await supabase
-      .from('invoice_line_items')
-      .select('*')
-      .in('invoice_id', invoiceIds);
+    let allLineItems: InvoiceLineItem[] = [];
+    
+    try {
+      if (USE_PYTHON_API) {
+        // For Python API, fetch line items for each invoice
+        const lineItemPromises = invoiceIds.map(id => 
+          apiClient.get<InvoiceLineItem[]>(`/invoices/${id}/line-items`)
+        );
+        const results = await Promise.all(lineItemPromises);
+        allLineItems = results.flatMap(r => r.data || []);
+      } else {
+        const supabase = await getCloudClient();
+        const { data } = await supabase
+          .from('invoice_line_items')
+          .select('*')
+          .in('invoice_id', invoiceIds);
+        allLineItems = data || [];
+      }
+    } catch (err) {
+      console.error('Failed to fetch line items for export');
+    }
 
     const workbook = new ExcelJS.Workbook();
     const directionLabel = activeTab === 'sales' ? 'Sales' : 'Purchase';

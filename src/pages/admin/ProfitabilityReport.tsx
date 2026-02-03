@@ -7,7 +7,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
-import { supabase } from '@/integrations/supabase/client';
+import { USE_PYTHON_API, getCloudClient } from '@/lib/backend';
+import { apiClient } from '@/lib/api-client';
 import { Loader2, TrendingUp, TrendingDown, Bus, Users, MapPin, Handshake, Building2, CalendarIcon, Filter, Download } from 'lucide-react';
 import { format, startOfMonth, endOfMonth } from 'date-fns';
 import { cn } from '@/lib/utils';
@@ -70,53 +71,87 @@ export default function ProfitabilityReport() {
   async function fetchProfitabilityData() {
     setLoading(true);
 
-    // Fetch fuel price from settings
-    const { data: fuelSetting } = await supabase
-      .from('admin_settings')
-      .select('value')
-      .eq('key', 'fuel_price_per_liter')
-      .single();
-    
-    const fuelPricePerLiter = fuelSetting?.value ? parseFloat(fuelSetting.value) : 90;
-
-    // Fetch trips with related data including bus ownership details, filtered by date
     const startDateStr = format(startDate, 'yyyy-MM-dd');
     const endDateStr = format(endDate, 'yyyy-MM-dd');
-    
-    const { data: trips } = await supabase
-      .from('trips')
-      .select(`
-        *,
-        bus:buses(id, registration_number, bus_name, ownership_type, partner_name, company_profit_share, partner_profit_share),
-        driver:profiles(id, full_name),
-        route:routes(id, route_name)
-      `)
-      .eq('status', 'completed')
-      .gte('start_date', startDateStr)
-      .lte('start_date', endDateStr + 'T23:59:59');
 
-    // Fetch fuel expense categories (diesel, fuel, petrol)
-    const { data: fuelCategories } = await supabase
-      .from('expense_categories')
-      .select('id, name')
-      .or('name.ilike.%diesel%,name.ilike.%fuel%,name.ilike.%petrol%');
+    let fuelPricePerLiter = 90;
+    let trips: any[] = [];
+    let fuelCategories: any[] = [];
+    let expenses: any[] = [];
 
-    const fuelCategoryIds = new Set(fuelCategories?.map(c => c.id) || []);
+    try {
+      if (USE_PYTHON_API) {
+        const [settingsRes, tripsRes, categoriesRes, expensesRes] = await Promise.all([
+          apiClient.get<any[]>('/settings'),
+          apiClient.get<any[]>(`/trips?status=completed&from_date=${startDateStr}&to_date=${endDateStr}`),
+          apiClient.get<any[]>('/expense-categories'),
+          apiClient.get<any[]>('/expenses?status=approved'),
+        ]);
 
-    // Fetch approved expenses including fuel_quantity
-    const { data: expenses } = await supabase
-      .from('expenses')
-      .select('trip_id, amount, category_id, fuel_quantity')
-      .eq('status', 'approved');
+        const fuelSetting = settingsRes.data?.find((s: any) => s.key === 'fuel_price_per_liter');
+        fuelPricePerLiter = fuelSetting?.value ? parseFloat(fuelSetting.value) : 90;
+        trips = tripsRes.data || [];
+        fuelCategories = (categoriesRes.data || []).filter((c: any) => 
+          c.name.toLowerCase().includes('diesel') || 
+          c.name.toLowerCase().includes('fuel') || 
+          c.name.toLowerCase().includes('petrol')
+        );
+        expenses = expensesRes.data || [];
+      } else {
+        const supabase = await getCloudClient();
+        
+        // Fetch fuel price from settings
+        const { data: fuelSetting } = await supabase
+          .from('admin_settings')
+          .select('value')
+          .eq('key', 'fuel_price_per_liter')
+          .single();
+        fuelPricePerLiter = fuelSetting?.value ? parseFloat(fuelSetting.value) : 90;
 
-    if (!trips) {
+        // Fetch trips with related data including bus ownership details, filtered by date
+        const { data: tripsData } = await supabase
+          .from('trips')
+          .select(`
+            *,
+            bus:buses(id, registration_number, bus_name, ownership_type, partner_name, company_profit_share, partner_profit_share),
+            driver:profiles(id, full_name),
+            route:routes(id, route_name)
+          `)
+          .eq('status', 'completed')
+          .gte('start_date', startDateStr)
+          .lte('start_date', endDateStr + 'T23:59:59');
+        trips = tripsData || [];
+
+        // Fetch fuel expense categories (diesel, fuel, petrol)
+        const { data: categoriesData } = await supabase
+          .from('expense_categories')
+          .select('id, name')
+          .or('name.ilike.%diesel%,name.ilike.%fuel%,name.ilike.%petrol%');
+        fuelCategories = categoriesData || [];
+
+        // Fetch approved expenses including fuel_quantity
+        const { data: expensesData } = await supabase
+          .from('expenses')
+          .select('trip_id, amount, category_id, fuel_quantity')
+          .eq('status', 'approved');
+        expenses = expensesData || [];
+      }
+    } catch (err) {
+      console.error('Failed to fetch profitability data:', err);
+      setLoading(false);
+      return;
+    }
+
+    const fuelCategoryIds = new Set(fuelCategories?.map((c: any) => c.id) || []);
+
+    if (!trips || trips.length === 0) {
       setLoading(false);
       return;
     }
 
     // Create expense lookup by trip (with actual fuel liters)
     const expensesByTrip: Record<string, { total: number; fuel: number; fuelLiters: number }> = {};
-    expenses?.forEach((exp) => {
+    expenses?.forEach((exp: any) => {
       if (!expensesByTrip[exp.trip_id]) {
         expensesByTrip[exp.trip_id] = { total: 0, fuel: 0, fuelLiters: 0 };
       }

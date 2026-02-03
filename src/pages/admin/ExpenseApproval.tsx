@@ -6,7 +6,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { supabase } from '@/integrations/supabase/client';
+import { USE_PYTHON_API, getCloudClient } from '@/lib/backend';
+import { apiClient } from '@/lib/api-client';
 import { Expense, ExpenseStatus } from '@/types/database';
 import { useAuth } from '@/hooks/useAuth';
 import { Check, X, Eye, Loader2, FileText, Download } from 'lucide-react';
@@ -52,26 +53,41 @@ export default function ExpenseApproval() {
   }, [statusFilter]);
 
   async function fetchExpenses() {
-    let query = supabase
-      .from('expenses')
-      .select(`
-        *,
-        category:expense_categories(name, icon),
-        trip:trips(trip_number),
-        submitter:profiles!expenses_submitted_by_fkey(full_name)
-      `)
-      .order('created_at', { ascending: false });
+    try {
+      if (USE_PYTHON_API) {
+        const statusParam = statusFilter !== 'all' ? `?status=${statusFilter}` : '';
+        const { data, error } = await apiClient.get<Expense[]>(`/expenses${statusParam}`);
+        if (error) {
+          toast.error('Failed to fetch expenses');
+        } else {
+          setExpenses(data || []);
+        }
+      } else {
+        const supabase = await getCloudClient();
+        let query = supabase
+          .from('expenses')
+          .select(`
+            *,
+            category:expense_categories(name, icon),
+            trip:trips(trip_number),
+            submitter:profiles!expenses_submitted_by_fkey(full_name)
+          `)
+          .order('created_at', { ascending: false });
 
-    if (statusFilter !== 'all') {
-      query = query.eq('status', statusFilter);
-    }
+        if (statusFilter !== 'all') {
+          query = query.eq('status', statusFilter);
+        }
 
-    const { data, error } = await query;
+        const { data, error } = await query;
 
-    if (error) {
+        if (error) {
+          toast.error('Failed to fetch expenses');
+        } else {
+          setExpenses((data || []) as unknown as Expense[]);
+        }
+      }
+    } catch (err) {
       toast.error('Failed to fetch expenses');
-    } else {
-      setExpenses((data || []) as unknown as Expense[]);
     }
     setLoading(false);
   }
@@ -86,35 +102,55 @@ export default function ExpenseApproval() {
     if (!selectedExpense || !user) return;
     setSubmitting(true);
 
-    // Get admin profile id
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('id')
-      .eq('user_id', user.id)
-      .single();
+    try {
+      if (USE_PYTHON_API) {
+        const { error } = await apiClient.put(`/expenses/${selectedExpense.id}`, {
+          status: 'approved',
+          admin_remarks: remarks || null,
+        });
 
-    if (!profile) {
-      toast.error('Admin profile not found');
-      setSubmitting(false);
-      return;
-    }
+        if (error) {
+          toast.error('Failed to approve expense');
+        } else {
+          toast.success('Expense approved and added to trip total');
+          setDialogOpen(false);
+          fetchExpenses();
+        }
+      } else {
+        const supabase = await getCloudClient();
+        // Get admin profile id
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('user_id', user.id)
+          .single();
 
-    const { error } = await supabase
-      .from('expenses')
-      .update({
-        status: 'approved',
-        admin_remarks: remarks || null,
-        approved_by: profile.id,
-        approved_at: new Date().toISOString(),
-      })
-      .eq('id', selectedExpense.id);
+        if (!profile) {
+          toast.error('Admin profile not found');
+          setSubmitting(false);
+          return;
+        }
 
-    if (error) {
+        const { error } = await supabase
+          .from('expenses')
+          .update({
+            status: 'approved',
+            admin_remarks: remarks || null,
+            approved_by: profile.id,
+            approved_at: new Date().toISOString(),
+          })
+          .eq('id', selectedExpense.id);
+
+        if (error) {
+          toast.error('Failed to approve expense');
+        } else {
+          toast.success('Expense approved and added to trip total');
+          setDialogOpen(false);
+          fetchExpenses();
+        }
+      }
+    } catch (err) {
       toast.error('Failed to approve expense');
-    } else {
-      toast.success('Expense approved and added to trip total');
-      setDialogOpen(false);
-      fetchExpenses();
     }
     setSubmitting(false);
   }
@@ -127,34 +163,54 @@ export default function ExpenseApproval() {
     }
     setSubmitting(true);
 
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('id')
-      .eq('user_id', user.id)
-      .single();
+    try {
+      if (USE_PYTHON_API) {
+        const { error } = await apiClient.put(`/expenses/${selectedExpense.id}`, {
+          status: 'denied',
+          admin_remarks: remarks,
+        });
 
-    if (!profile) {
-      toast.error('Admin profile not found');
-      setSubmitting(false);
-      return;
-    }
+        if (error) {
+          toast.error('Failed to deny expense');
+        } else {
+          toast.success('Expense denied');
+          setDialogOpen(false);
+          fetchExpenses();
+        }
+      } else {
+        const supabase = await getCloudClient();
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('user_id', user.id)
+          .single();
 
-    const { error } = await supabase
-      .from('expenses')
-      .update({
-        status: 'denied',
-        admin_remarks: remarks,
-        approved_by: profile.id,
-        approved_at: new Date().toISOString(),
-      })
-      .eq('id', selectedExpense.id);
+        if (!profile) {
+          toast.error('Admin profile not found');
+          setSubmitting(false);
+          return;
+        }
 
-    if (error) {
+        const { error } = await supabase
+          .from('expenses')
+          .update({
+            status: 'denied',
+            admin_remarks: remarks,
+            approved_by: profile.id,
+            approved_at: new Date().toISOString(),
+          })
+          .eq('id', selectedExpense.id);
+
+        if (error) {
+          toast.error('Failed to deny expense');
+        } else {
+          toast.success('Expense denied');
+          setDialogOpen(false);
+          fetchExpenses();
+        }
+      }
+    } catch (err) {
       toast.error('Failed to deny expense');
-    } else {
-      toast.success('Expense denied');
-      setDialogOpen(false);
-      fetchExpenses();
     }
     setSubmitting(false);
   }
