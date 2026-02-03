@@ -346,6 +346,182 @@ async def add_payment(
     return invoice_to_dict(invoice)
 
 
+@router.get("/{invoice_id}/line-items")
+async def get_line_items(
+    invoice_id: str,
+    current_user: TokenData = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """Get line items for an invoice"""
+    items = db.query(InvoiceLineItem).filter(
+        InvoiceLineItem.invoice_id == uuid.UUID(invoice_id)
+    ).all()
+    
+    return [{
+        "id": str(item.id),
+        "invoice_id": str(item.invoice_id),
+        "description": item.description,
+        "quantity": float(item.quantity),
+        "unit_price": float(item.unit_price),
+        "gst_percentage": float(item.gst_percentage),
+        "rate_includes_gst": item.rate_includes_gst,
+        "base_amount": float(item.base_amount),
+        "gst_amount": float(item.gst_amount),
+        "amount": float(item.amount),
+        "is_deduction": item.is_deduction
+    } for item in items]
+
+
+@router.post("/{invoice_id}/line-items")
+async def add_line_item(
+    invoice_id: str,
+    item_data: LineItemCreate,
+    current_user: TokenData = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """Add a line item to an invoice"""
+    invoice = db.query(Invoice).filter(Invoice.id == uuid.UUID(invoice_id)).first()
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    
+    amounts = calculate_line_item_amounts(item_data)
+    
+    line_item = InvoiceLineItem(
+        id=uuid.uuid4(),
+        invoice_id=invoice.id,
+        description=item_data.description,
+        quantity=item_data.quantity,
+        unit_price=item_data.unit_price,
+        gst_percentage=item_data.gst_percentage,
+        rate_includes_gst=item_data.rate_includes_gst,
+        base_amount=amounts["base_amount"],
+        gst_amount=amounts["gst_amount"],
+        amount=amounts["amount"],
+        is_deduction=item_data.is_deduction
+    )
+    db.add(line_item)
+    
+    # Update invoice totals
+    if item_data.is_deduction:
+        invoice.subtotal = float(invoice.subtotal) - amounts["base_amount"]
+        invoice.gst_amount = float(invoice.gst_amount) - amounts["gst_amount"]
+    else:
+        invoice.subtotal = float(invoice.subtotal) + amounts["base_amount"]
+        invoice.gst_amount = float(invoice.gst_amount) + amounts["gst_amount"]
+    
+    invoice.total_amount = float(invoice.subtotal) + float(invoice.gst_amount)
+    invoice.balance_due = float(invoice.total_amount) - float(invoice.amount_paid)
+    
+    db.commit()
+    
+    return {
+        "id": str(line_item.id),
+        "invoice_id": str(line_item.invoice_id),
+        "description": line_item.description,
+        "quantity": float(line_item.quantity),
+        "unit_price": float(line_item.unit_price),
+        "gst_percentage": float(line_item.gst_percentage),
+        "rate_includes_gst": line_item.rate_includes_gst,
+        "base_amount": float(line_item.base_amount),
+        "gst_amount": float(line_item.gst_amount),
+        "amount": float(line_item.amount),
+        "is_deduction": line_item.is_deduction
+    }
+
+
+@router.delete("/{invoice_id}/line-items/{item_id}")
+async def delete_line_item(
+    invoice_id: str,
+    item_id: str,
+    current_user: TokenData = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """Delete a line item from an invoice"""
+    item = db.query(InvoiceLineItem).filter(
+        InvoiceLineItem.id == uuid.UUID(item_id),
+        InvoiceLineItem.invoice_id == uuid.UUID(invoice_id)
+    ).first()
+    
+    if not item:
+        raise HTTPException(status_code=404, detail="Line item not found")
+    
+    invoice = db.query(Invoice).filter(Invoice.id == uuid.UUID(invoice_id)).first()
+    
+    # Update invoice totals
+    if item.is_deduction:
+        invoice.subtotal = float(invoice.subtotal) + float(item.base_amount)
+        invoice.gst_amount = float(invoice.gst_amount) + float(item.gst_amount)
+    else:
+        invoice.subtotal = float(invoice.subtotal) - float(item.base_amount)
+        invoice.gst_amount = float(invoice.gst_amount) - float(item.gst_amount)
+    
+    invoice.total_amount = float(invoice.subtotal) + float(invoice.gst_amount)
+    invoice.balance_due = float(invoice.total_amount) - float(invoice.amount_paid)
+    
+    db.delete(item)
+    db.commit()
+    
+    return {"message": "Line item deleted successfully"}
+
+
+@router.get("/{invoice_id}/payments")
+async def get_payments(
+    invoice_id: str,
+    current_user: TokenData = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """Get payments for an invoice"""
+    payments = db.query(InvoicePayment).filter(
+        InvoicePayment.invoice_id == uuid.UUID(invoice_id)
+    ).all()
+    
+    return [{
+        "id": str(p.id),
+        "invoice_id": str(p.invoice_id),
+        "amount": float(p.amount),
+        "payment_date": str(p.payment_date) if p.payment_date else None,
+        "payment_mode": p.payment_mode,
+        "reference_number": p.reference_number,
+        "notes": p.notes,
+        "created_by": str(p.created_by) if p.created_by else None,
+        "created_at": p.created_at.isoformat() if p.created_at else None
+    } for p in payments]
+
+
+@router.delete("/{invoice_id}/payments/{payment_id}")
+async def delete_payment(
+    invoice_id: str,
+    payment_id: str,
+    current_user: TokenData = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """Delete a payment from an invoice"""
+    payment = db.query(InvoicePayment).filter(
+        InvoicePayment.id == uuid.UUID(payment_id),
+        InvoicePayment.invoice_id == uuid.UUID(invoice_id)
+    ).first()
+    
+    if not payment:
+        raise HTTPException(status_code=404, detail="Payment not found")
+    
+    invoice = db.query(Invoice).filter(Invoice.id == uuid.UUID(invoice_id)).first()
+    
+    # Update invoice amounts
+    invoice.amount_paid = float(invoice.amount_paid) - float(payment.amount)
+    invoice.balance_due = float(invoice.total_amount) - float(invoice.amount_paid)
+    
+    # Update status
+    if invoice.balance_due >= float(invoice.total_amount):
+        invoice.status = InvoiceStatus.sent if invoice.status != InvoiceStatus.draft else InvoiceStatus.draft
+    elif invoice.amount_paid > 0:
+        invoice.status = InvoiceStatus.partial
+    
+    db.delete(payment)
+    db.commit()
+    
+    return {"message": "Payment deleted successfully"}
+
+
 @router.delete("/{invoice_id}")
 async def delete_invoice(
     invoice_id: str,
