@@ -1,7 +1,8 @@
 import { useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { USE_PYTHON_API, getCloudClient } from '@/lib/backend';
+import apiClient from '@/lib/api-client';
 
 interface SessionSecurityOptions {
   // Time in minutes before showing inactivity warning
@@ -33,6 +34,19 @@ export function useSessionSecurity(options: SessionSecurityOptions = {}) {
 
   // Check session validity
   const checkSession = useCallback(async () => {
+    if (USE_PYTHON_API) {
+      // Python API mode - check if token exists and is valid
+      const { user } = await apiClient.getSession();
+      if (!user) {
+        await apiClient.signOut();
+        navigate('/login');
+        return false;
+      }
+      return true;
+    }
+
+    // Cloud mode
+    const supabase = await getCloudClient();
     const { data: { session }, error } = await supabase.auth.getSession();
     
     if (error || !session) {
@@ -61,7 +75,12 @@ export function useSessionSecurity(options: SessionSecurityOptions = {}) {
     if (inactiveMinutes >= opts.inactivityLogoutTime!) {
       // Log out due to inactivity
       toast.error('You have been logged out due to inactivity.');
-      await supabase.auth.signOut();
+      if (USE_PYTHON_API) {
+        await apiClient.signOut();
+      } else {
+        const supabase = await getCloudClient();
+        await supabase.auth.signOut();
+      }
       navigate('/login');
       return;
     }
@@ -82,12 +101,28 @@ export function useSessionSecurity(options: SessionSecurityOptions = {}) {
     if (message) {
       toast.error(message);
     }
-    await supabase.auth.signOut();
+    if (USE_PYTHON_API) {
+      await apiClient.signOut();
+    } else {
+      const supabase = await getCloudClient();
+      await supabase.auth.signOut();
+    }
     navigate('/login');
   }, [navigate]);
 
   // Refresh session
   const refreshSession = useCallback(async () => {
+    if (USE_PYTHON_API) {
+      // Python API doesn't support token refresh - just validate current session
+      const { user } = await apiClient.getSession();
+      if (user) {
+        updateActivity();
+        return true;
+      }
+      return false;
+    }
+
+    const supabase = await getCloudClient();
     const { error } = await supabase.auth.refreshSession();
     if (error) {
       console.error('Failed to refresh session:', error);
@@ -117,16 +152,21 @@ export function useSessionSecurity(options: SessionSecurityOptions = {}) {
       checkSession();
     }, 60000); // Check every minute
 
-    // Listen for auth state changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'SIGNED_OUT') {
-        navigate('/login');
-      } else if (event === 'TOKEN_REFRESHED') {
-        updateActivity();
-      } else if (event === 'USER_UPDATED') {
-        updateActivity();
-      }
-    });
+    let subscription: { unsubscribe: () => void } | null = null;
+
+    // Listen for auth state changes (Cloud mode only)
+    if (!USE_PYTHON_API) {
+      getCloudClient().then((supabase) => {
+        const { data } = supabase.auth.onAuthStateChange((event: string) => {
+          if (event === 'SIGNED_OUT') {
+            navigate('/login');
+          } else if (event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
+            updateActivity();
+          }
+        });
+        subscription = data.subscription;
+      });
+    }
 
     // Initial session check
     checkSession();
@@ -138,7 +178,7 @@ export function useSessionSecurity(options: SessionSecurityOptions = {}) {
       if (checkIntervalRef.current) {
         clearInterval(checkIntervalRef.current);
       }
-      subscription.unsubscribe();
+      subscription?.unsubscribe();
     };
   }, [opts.enableActivityTracking, updateActivity, checkInactivity, checkSession, navigate]);
 
