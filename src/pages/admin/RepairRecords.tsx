@@ -6,7 +6,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { supabase } from '@/integrations/supabase/client';
+import { USE_PYTHON_API, getCloudClient } from '@/lib/backend';
+import apiClient from '@/lib/api-client';
 import { useAuth } from '@/hooks/useAuth';
 import { Loader2, Wrench, Eye, Check, X, Image } from 'lucide-react';
 import { toast } from 'sonner';
@@ -58,33 +59,50 @@ export default function RepairRecords() {
 
   async function fetchProfile() {
     if (!user) return;
-    const { data } = await supabase
-      .from('profiles')
-      .select('id')
-      .eq('user_id', user.id)
-      .single();
-    if (data) {
-      setProfileId(data.id);
+    if (USE_PYTHON_API) {
+      // In Python API mode, the user object already has profile_id
+      setProfileId((user as any).profile_id || null);
+    } else {
+      const supabase = await getCloudClient();
+      const { data } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('user_id', user.id)
+        .single();
+      if (data) {
+        setProfileId(data.id);
+      }
     }
     fetchRecords();
   }
 
   async function fetchRecords() {
-    const { data, error } = await supabase
-      // @ts-ignore - table exists after migration
-      .from('repair_records')
-      .select(`
-        *,
-        repair_organizations (org_code, org_name),
-        buses (bus_name)
-      `)
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      toast.error('Failed to load repair records');
-      console.error(error);
+    if (USE_PYTHON_API) {
+      const { data, error } = await apiClient.get<any[]>('/repairs');
+      if (error) {
+        toast.error('Failed to load repair records');
+        console.error(error);
+      } else {
+        setRecords(data || []);
+      }
     } else {
-      setRecords(data || []);
+      const supabase = await getCloudClient();
+      const { data, error } = await supabase
+        // @ts-ignore - table exists after migration
+        .from('repair_records')
+        .select(`
+          *,
+          repair_organizations (org_code, org_name),
+          buses (bus_name)
+        `)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        toast.error('Failed to load repair records');
+        console.error(error);
+      } else {
+        setRecords(data || []);
+      }
     }
     setLoading(false);
   }
@@ -98,13 +116,22 @@ export default function RepairRecords() {
         updateData.approved_at = new Date().toISOString();
       }
 
-      const { error } = await supabase
+    let error: Error | null = null;
+    
+    if (USE_PYTHON_API) {
+      const res = await apiClient.put(`/repairs/${recordId}`, updateData);
+      error = res.error;
+    } else {
+      const supabase = await getCloudClient();
+      const res = await supabase
         // @ts-ignore - table exists after migration
         .from('repair_records')
         .update(updateData)
         .eq('id', recordId);
+      error = res.error ? new Error(res.error.message) : null;
+    }
 
-      if (error) throw error;
+    if (error) throw error;
 
       toast.success(`Record ${newStatus} successfully`);
       fetchRecords();
