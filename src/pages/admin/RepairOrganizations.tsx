@@ -10,7 +10,8 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Switch } from '@/components/ui/switch';
-import { supabase } from '@/integrations/supabase/client';
+import { USE_PYTHON_API, getCloudClient } from '@/lib/backend';
+import apiClient from '@/lib/api-client';
 import { Loader2, Plus, Building2, Edit, Trash2, Key, UserPlus } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
@@ -73,42 +74,55 @@ export default function RepairOrganizations() {
   }, []);
 
   async function fetchOrganizations() {
-    // Fetch organizations and their users in parallel
-    const [orgsResult, usersResult] = await Promise.all([
-      supabase
-        // @ts-ignore - table exists after migration
-        .from('repair_organizations')
-        .select('*')
-        .order('org_name'),
-      supabase
-        .from('profiles')
-        .select('user_id, full_name, repair_org_id')
-        .not('repair_org_id', 'is', null)
-    ]);
-
-    if (orgsResult.error) {
-      toast.error('Failed to load organizations');
-      console.error(orgsResult.error);
-    } else {
-      setOrganizations(orgsResult.data || []);
-    }
-
-    // Group users by org_id
-    if (usersResult.data) {
-      const usersByOrg: Record<string, OrgUser[]> = {};
-      for (const profile of usersResult.data) {
-        if (profile.repair_org_id) {
-          if (!usersByOrg[profile.repair_org_id]) {
-            usersByOrg[profile.repair_org_id] = [];
-          }
-          usersByOrg[profile.repair_org_id].push({
-            full_name: profile.full_name,
-            email: null, // We'll display full_name as primary identifier
-            user_id: profile.user_id,
-          });
-        }
+    if (USE_PYTHON_API) {
+      const { data: orgs, error } = await apiClient.get<any[]>('/repairs/organizations');
+      if (error) {
+        toast.error('Failed to load organizations');
+        console.error(error);
+      } else {
+        setOrganizations(orgs || []);
       }
-      setOrgUsers(usersByOrg);
+      // For users, we'd need a separate endpoint - for now just set empty
+      setOrgUsers({});
+    } else {
+      const supabase = await getCloudClient();
+      // Fetch organizations and their users in parallel
+      const [orgsResult, usersResult] = await Promise.all([
+        supabase
+          // @ts-ignore - table exists after migration
+          .from('repair_organizations')
+          .select('*')
+          .order('org_name'),
+        supabase
+          .from('profiles')
+          .select('user_id, full_name, repair_org_id')
+          .not('repair_org_id', 'is', null)
+      ]);
+
+      if (orgsResult.error) {
+        toast.error('Failed to load organizations');
+        console.error(orgsResult.error);
+      } else {
+        setOrganizations(orgsResult.data || []);
+      }
+
+      // Group users by org_id
+      if (usersResult.data) {
+        const usersByOrg: Record<string, OrgUser[]> = {};
+        for (const profile of usersResult.data) {
+          if (profile.repair_org_id) {
+            if (!usersByOrg[profile.repair_org_id]) {
+              usersByOrg[profile.repair_org_id] = [];
+            }
+            usersByOrg[profile.repair_org_id].push({
+              full_name: profile.full_name,
+              email: null, // We'll display full_name as primary identifier
+              user_id: profile.user_id,
+            });
+          }
+        }
+        setOrgUsers(usersByOrg);
+      }
     }
 
     setLoading(false);
@@ -163,6 +177,18 @@ export default function RepairOrganizations() {
         is_active: formData.is_active,
       };
 
+    if (USE_PYTHON_API) {
+      if (editingId) {
+        const { error } = await apiClient.put(`/repairs/organizations/${editingId}`, payload);
+        if (error) throw error;
+        toast.success('Organization updated successfully');
+      } else {
+        const { error } = await apiClient.post('/repairs/organizations', payload);
+        if (error) throw error;
+        toast.success('Organization created successfully');
+      }
+      } else {
+      const supabase = await getCloudClient();
       if (editingId) {
         const { error } = await supabase
           // @ts-ignore - table exists after migration
@@ -177,6 +203,7 @@ export default function RepairOrganizations() {
           .from('repair_organizations').insert(payload);
         if (error) throw error;
         toast.success('Organization created successfully');
+      }
       }
 
       setDialogOpen(false);
@@ -196,11 +223,20 @@ export default function RepairOrganizations() {
     if (!deleteDialog.org) return;
 
     try {
-      const { error } = await supabase
-        // @ts-ignore - table exists after migration
-        .from('repair_organizations')
-        .delete()
-        .eq('id', deleteDialog.org.id);
+      let error: Error | null = null;
+      
+      if (USE_PYTHON_API) {
+        const res = await apiClient.delete(`/repairs/organizations/${deleteDialog.org.id}`);
+        error = res.error;
+      } else {
+        const supabase = await getCloudClient();
+        const res = await supabase
+          // @ts-ignore - table exists after migration
+          .from('repair_organizations')
+          .delete()
+          .eq('id', deleteDialog.org.id);
+        error = res.error ? new Error(res.error.message) : null;
+      }
 
       if (error) throw error;
       toast.success('Organization deleted successfully');
@@ -230,6 +266,16 @@ export default function RepairOrganizations() {
     setCreatingUser(true);
 
     try {
+      if (USE_PYTHON_API) {
+        // Python API would need a dedicated endpoint for this
+        toast.error('User creation is only available in Cloud mode');
+        setCreatingUser(false);
+        return;
+      }
+      
+      const supabase = await getCloudClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      
       const response = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-repair-user`,
         {

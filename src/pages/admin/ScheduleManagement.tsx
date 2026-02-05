@@ -20,7 +20,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { supabase } from '@/integrations/supabase/client';
+import { USE_PYTHON_API, getCloudClient } from '@/lib/backend';
+import apiClient from '@/lib/api-client';
 import { Bus, Route, Profile, BusSchedule } from '@/types/database';
 import { Plus, Pencil, Loader2, Trash2, Calendar, Clock, ArrowLeftRight, Play, Moon } from 'lucide-react';
 import { toast } from 'sonner';
@@ -123,62 +124,90 @@ export default function ScheduleManagement() {
   }, []);
 
   async function fetchSchedules() {
-    const { data, error } = await supabase
-      .from('bus_schedules')
-      .select(`
-        *,
-        bus:buses(*),
-        route:routes(*),
-        driver:profiles(*)
-      `)
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      toast.error('Failed to fetch schedules');
+    if (USE_PYTHON_API) {
+      const { data, error } = await apiClient.get<any[]>('/schedules');
+      if (error) {
+        toast.error('Failed to fetch schedules');
+      } else {
+        setSchedules(data || []);
+      }
     } else {
-      setSchedules(data as BusSchedule[]);
+      const supabase = await getCloudClient();
+      const { data, error } = await supabase
+        .from('bus_schedules')
+        .select(`
+          *,
+          bus:buses(*),
+          route:routes(*),
+          driver:profiles(*)
+        `)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        toast.error('Failed to fetch schedules');
+      } else {
+        setSchedules(data as BusSchedule[]);
+      }
     }
     setLoading(false);
   }
 
   async function fetchBuses() {
-    const { data } = await supabase
-      .from('buses')
-      .select('*')
-      .eq('status', 'active')
-      .order('registration_number');
-    setBuses(data as Bus[] || []);
+    if (USE_PYTHON_API) {
+      const { data } = await apiClient.get<any[]>('/buses', { status: 'active' });
+      setBuses(data || []);
+    } else {
+      const supabase = await getCloudClient();
+      const { data } = await supabase
+        .from('buses')
+        .select('*')
+        .eq('status', 'active')
+        .order('registration_number');
+      setBuses(data as Bus[] || []);
+    }
   }
 
   async function fetchRoutes() {
-    const { data } = await supabase
-      .from('routes')
-      .select('*')
-      .order('route_name');
-    setRoutes(data as Route[] || []);
+    if (USE_PYTHON_API) {
+      const { data } = await apiClient.get<any[]>('/routes');
+      setRoutes(data || []);
+    } else {
+      const supabase = await getCloudClient();
+      const { data } = await supabase
+        .from('routes')
+        .select('*')
+        .order('route_name');
+      setRoutes(data as Route[] || []);
+    }
   }
 
   async function fetchDrivers() {
-    // First get all user_ids with driver role
-    const { data: driverRoles } = await supabase
-      .from('user_roles')
-      .select('user_id')
-      .eq('role', 'driver');
-    
-    if (!driverRoles || driverRoles.length === 0) {
-      setDrivers([]);
-      return;
-    }
+    if (USE_PYTHON_API) {
+      const { data } = await apiClient.get<any[]>('/drivers');
+      setDrivers(data || []);
+    } else {
+      const supabase = await getCloudClient();
+      // First get all user_ids with driver role
+      const { data: driverRoles } = await supabase
+        .from('user_roles')
+        .select('user_id')
+        .eq('role', 'driver');
+      
+      if (!driverRoles || driverRoles.length === 0) {
+        setDrivers([]);
+        return;
+      }
 
-    // Then fetch profiles for those user_ids
-    const driverUserIds = driverRoles.map(r => r.user_id);
-    const { data: profiles } = await supabase
-      .from('profiles')
-      .select('*')
-      .in('user_id', driverUserIds)
-      .order('full_name');
-    
-    setDrivers(profiles as Profile[] || []);
+      // Then fetch profiles for those user_ids
+      const driverUserIds = driverRoles.map(r => r.user_id);
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('*')
+        .in('user_id', driverUserIds)
+        .order('full_name');
+      
+      setDrivers(profiles as Profile[] || []);
+    }
   }
 
   function handleEdit(schedule: BusSchedule) {
@@ -256,28 +285,51 @@ export default function ScheduleManagement() {
       notes: formData.notes || null,
     };
 
-    if (editingSchedule) {
-      const { error } = await supabase
-        .from('bus_schedules')
-        .update(payload)
-        .eq('id', editingSchedule.id);
-
-      if (error) {
-        toast.error('Failed to update schedule');
+    if (USE_PYTHON_API) {
+      if (editingSchedule) {
+        const { error } = await apiClient.put(`/schedules/${editingSchedule.id}`, payload);
+        if (error) {
+          toast.error('Failed to update schedule');
+        } else {
+          toast.success('Schedule updated successfully');
+          setDialogOpen(false);
+          fetchSchedules();
+        }
       } else {
-        toast.success('Schedule updated successfully');
-        setDialogOpen(false);
-        fetchSchedules();
+        const { error } = await apiClient.post('/schedules', payload);
+        if (error) {
+          toast.error(error.message || 'Failed to add schedule');
+        } else {
+          toast.success('Schedule added successfully');
+          setDialogOpen(false);
+          fetchSchedules();
+        }
       }
     } else {
-      const { error } = await supabase.from('bus_schedules').insert(payload);
+      const supabase = await getCloudClient();
+      if (editingSchedule) {
+        const { error } = await supabase
+          .from('bus_schedules')
+          .update(payload)
+          .eq('id', editingSchedule.id);
 
-      if (error) {
-        toast.error(error.message || 'Failed to add schedule');
+        if (error) {
+          toast.error('Failed to update schedule');
+        } else {
+          toast.success('Schedule updated successfully');
+          setDialogOpen(false);
+          fetchSchedules();
+        }
       } else {
-        toast.success('Schedule added successfully');
-        setDialogOpen(false);
-        fetchSchedules();
+        const { error } = await supabase.from('bus_schedules').insert(payload);
+
+        if (error) {
+          toast.error(error.message || 'Failed to add schedule');
+        } else {
+          toast.success('Schedule added successfully');
+          setDialogOpen(false);
+          fetchSchedules();
+        }
       }
     }
     setSubmitting(false);
@@ -292,10 +344,19 @@ export default function ScheduleManagement() {
     if (!deletingSchedule) return;
 
     setDeleting(true);
-    const { error } = await supabase
-      .from('bus_schedules')
-      .delete()
-      .eq('id', deletingSchedule.id);
+    let error: Error | null = null;
+    
+    if (USE_PYTHON_API) {
+      const res = await apiClient.delete(`/schedules/${deletingSchedule.id}`);
+      error = res.error;
+    } else {
+      const supabase = await getCloudClient();
+      const res = await supabase
+        .from('bus_schedules')
+        .delete()
+        .eq('id', deletingSchedule.id);
+      error = res.error ? new Error(res.error.message) : null;
+    }
 
     if (error) {
       toast.error('Failed to delete schedule');
@@ -318,8 +379,14 @@ export default function ScheduleManagement() {
   async function handleGenerateTrips() {
     setGenerating(true);
     try {
-      const { data, error } = await supabase.functions.invoke('generate-scheduled-trips');
+      if (USE_PYTHON_API) {
+        toast.info('Trip generation is only available in Cloud mode');
+        setGenerating(false);
+        return;
+      }
       
+      const supabase = await getCloudClient();
+      const { data, error } = await supabase.functions.invoke('generate-scheduled-trips');
       if (error) throw error;
       
       if (data.tripsCreated > 0) {
