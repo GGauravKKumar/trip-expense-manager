@@ -9,7 +9,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { supabase } from '@/integrations/supabase/client';
+import apiClient from '@/lib/api-client';
+import { getCloudClient, USE_PYTHON_API } from '@/lib/backend';
 import { Trip, TripStatus, TripType, Bus, Profile, Route } from '@/types/database';
 import { Plus, Pencil, Loader2, Download, Eye, FileSpreadsheet, IndianRupee, Calendar, ArrowLeftRight, ArrowRight, ArrowLeft, Link } from 'lucide-react';
 import { toast } from 'sonner';
@@ -143,17 +144,26 @@ export default function TripManagement() {
     try {
       // Get all expenses for these trips
       const tripIds = trips.map(t => t.id);
-      const { data: expenses, error } = await supabase
-        .from('expenses')
-        .select(`
-          trip_id,
-          amount,
-          category:expense_categories(name)
-        `)
-        .in('trip_id', tripIds)
-        .eq('status', 'approved');
+      let expenses: any[] | null = null;
       
-      if (error) throw error;
+      if (USE_PYTHON_API) {
+        const { data } = await apiClient.get<any[]>('/expenses', { status: 'approved', limit: 10000 });
+        expenses = data?.filter(e => tripIds.includes(e.trip_id)) || null;
+      } else {
+        const supabase = await getCloudClient();
+        const { data, error } = await supabase
+          .from('expenses')
+          .select(`
+            trip_id,
+            amount,
+            category:expense_categories(name)
+          `)
+          .in('trip_id', tripIds)
+          .eq('status', 'approved');
+        
+        if (error) throw error;
+        expenses = data;
+      }
 
       // Group expenses by trip
       const expensesByTrip: Record<string, { category_name: string; amount: number }[]> = {};
@@ -222,17 +232,26 @@ export default function TripManagement() {
     toast.info('Generating Trip Sheet...');
     
     try {
-      const { data: expenses, error } = await supabase
-        .from('expenses')
-        .select(`
-          trip_id,
-          amount,
-          category:expense_categories(name)
-        `)
-        .eq('trip_id', trip.id)
-        .eq('status', 'approved');
+      let expenses: any[] | null = null;
       
-      if (error) throw error;
+      if (USE_PYTHON_API) {
+        const { data } = await apiClient.get<any[]>('/expenses', { trip_id: trip.id, status: 'approved', limit: 1000 });
+        expenses = data;
+      } else {
+        const supabase = await getCloudClient();
+        const { data, error } = await supabase
+          .from('expenses')
+          .select(`
+            trip_id,
+            amount,
+            category:expense_categories(name)
+          `)
+          .eq('trip_id', trip.id)
+          .eq('status', 'approved');
+        
+        if (error) throw error;
+        expenses = data;
+      }
 
       const tripExpenses = expenses?.map(exp => ({
         category_name: (exp.category as any)?.name || 'Other',
@@ -294,75 +313,121 @@ export default function TripManagement() {
 
   async function fetchBusyBuses() {
     // Get buses that have in_progress trips
-    const { data } = await supabase
-      .from('trips')
-      .select('bus_id')
-      .eq('status', 'in_progress');
-    
-    if (data) {
-      const busyIds = new Set(data.map(t => t.bus_id).filter(Boolean) as string[]);
-      setBusyBusIds(busyIds);
+    if (USE_PYTHON_API) {
+      const { data } = await apiClient.get<any[]>('/trips', { status: 'in_progress', limit: 1000 });
+      if (data) {
+        const busyIds = new Set(data.map(t => t.bus_id).filter(Boolean) as string[]);
+        setBusyBusIds(busyIds);
+      }
+    } else {
+      const supabase = await getCloudClient();
+      const { data } = await supabase
+        .from('trips')
+        .select('bus_id')
+        .eq('status', 'in_progress');
+      
+      if (data) {
+        const busyIds = new Set(data.map(t => t.bus_id).filter(Boolean) as string[]);
+        setBusyBusIds(busyIds);
+      }
     }
   }
 
   async function fetchBusyDrivers() {
     // Get drivers who have in_progress trips
-    const { data } = await supabase
-      .from('trips')
-      .select('driver_id')
-      .eq('status', 'in_progress');
-    
-    if (data) {
-      const busyIds = new Set(data.map(t => t.driver_id).filter(Boolean) as string[]);
-      setBusyDriverIds(busyIds);
+    if (USE_PYTHON_API) {
+      const { data } = await apiClient.get<any[]>('/trips', { status: 'in_progress', limit: 1000 });
+      if (data) {
+        const busyIds = new Set(data.map(t => t.driver_id).filter(Boolean) as string[]);
+        setBusyDriverIds(busyIds);
+      }
+    } else {
+      const supabase = await getCloudClient();
+      const { data } = await supabase
+        .from('trips')
+        .select('driver_id')
+        .eq('status', 'in_progress');
+      
+      if (data) {
+        const busyIds = new Set(data.map(t => t.driver_id).filter(Boolean) as string[]);
+        setBusyDriverIds(busyIds);
+      }
     }
   }
 
   async function fetchTrips() {
-    const { data, error } = await supabase
-      .from('trips')
-      .select(`
-        *,
-        bus:buses(registration_number, bus_name),
-        driver:profiles!trips_driver_id_fkey(full_name),
-        route:routes(route_name)
-      `)
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      toast.error('Failed to fetch trips');
+    if (USE_PYTHON_API) {
+      const { data, error } = await apiClient.get<any[]>('/trips');
+      if (error) {
+        toast.error('Failed to fetch trips');
+      } else {
+        setTrips((data || []) as Trip[]);
+      }
     } else {
-      setTrips((data || []) as Trip[]);
+      const supabase = await getCloudClient();
+      const { data, error } = await supabase
+        .from('trips')
+        .select(`
+          *,
+          bus:buses(registration_number, bus_name),
+          driver:profiles!trips_driver_id_fkey(full_name),
+          route:routes(route_name)
+        `)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        toast.error('Failed to fetch trips');
+      } else {
+        setTrips((data || []) as Trip[]);
+      }
     }
     setLoading(false);
   }
 
   async function fetchBuses() {
-    const { data } = await supabase.from('buses').select('*').eq('status', 'active');
-    if (data) setBuses(data as Bus[]);
+    if (USE_PYTHON_API) {
+      const { data } = await apiClient.get<any[]>('/buses', { status: 'active' });
+      if (data) setBuses(data as Bus[]);
+    } else {
+      const supabase = await getCloudClient();
+      const { data } = await supabase.from('buses').select('*').eq('status', 'active');
+      if (data) setBuses(data as Bus[]);
+    }
   }
 
   async function fetchDrivers() {
-    // Get users with driver role
-    const { data: roles } = await supabase
-      .from('user_roles')
-      .select('user_id')
-      .eq('role', 'driver');
+    if (USE_PYTHON_API) {
+      const { data } = await apiClient.get<any[]>('/drivers');
+      if (data) setDrivers(data as Profile[]);
+    } else {
+      const supabase = await getCloudClient();
+      // Get users with driver role
+      const { data: roles } = await supabase
+        .from('user_roles')
+        .select('user_id')
+        .eq('role', 'driver');
 
-    if (roles && roles.length > 0) {
-      const userIds = roles.map((r) => r.user_id);
-      const { data: profiles } = await supabase
-        .from('profiles')
-        .select('*')
-        .in('user_id', userIds);
+      if (roles && roles.length > 0) {
+        const userIds = roles.map((r) => r.user_id);
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('*')
+          .in('user_id', userIds);
 
-      if (profiles) setDrivers(profiles as Profile[]);
+        if (profiles) setDrivers(profiles as Profile[]);
+      }
     }
   }
 
   async function fetchRoutes() {
-    const { data } = await supabase.from('routes').select('*');
-    if (data) setRoutes(data as Route[]);
+    if (USE_PYTHON_API) {
+      const { data } = await apiClient.get<any[]>('/routes');
+      if (data) setRoutes(data as Route[]);
+    } else {
+      const supabase = await getCloudClient();
+      const { data } = await supabase.from('routes').select('*');
+      if (data) setRoutes(data as Route[]);
+    }
   }
 
   function generateTripNumber() {
@@ -411,12 +476,25 @@ export default function TripManagement() {
 
     // Check if bus is already on an in-progress trip
     if (formData.bus_id && (formData.status === 'scheduled' || formData.status === 'in_progress')) {
-      const { data: existingBusTrips } = await supabase
-        .from('trips')
-        .select('id, trip_number')
-        .eq('bus_id', formData.bus_id)
-        .eq('status', 'in_progress')
-        .neq('id', editingTrip?.id || '');
+      let existingBusTrips: any[] | null = null;
+      
+      if (USE_PYTHON_API) {
+        const { data } = await apiClient.get<any[]>('/trips', { 
+          bus_id: formData.bus_id, 
+          status: 'in_progress',
+          limit: 100 
+        });
+        existingBusTrips = data?.filter(t => t.id !== editingTrip?.id) || null;
+      } else {
+        const supabase = await getCloudClient();
+        const { data } = await supabase
+          .from('trips')
+          .select('id, trip_number')
+          .eq('bus_id', formData.bus_id)
+          .eq('status', 'in_progress')
+          .neq('id', editingTrip?.id || '');
+        existingBusTrips = data;
+      }
       
       if (existingBusTrips && existingBusTrips.length > 0) {
         toast.error(`Bus is already on trip ${existingBusTrips[0].trip_number}. Complete that trip first before scheduling a new one.`);
@@ -427,12 +505,25 @@ export default function TripManagement() {
 
     // Check if driver is already on an in-progress trip (skip if editing the same trip or if status is not scheduled/in_progress)
     if (formData.driver_id && (formData.status === 'scheduled' || formData.status === 'in_progress')) {
-      const { data: existingTrips } = await supabase
-        .from('trips')
-        .select('id, trip_number')
-        .eq('driver_id', formData.driver_id)
-        .eq('status', 'in_progress')
-        .neq('id', editingTrip?.id || '');
+      let existingTrips: any[] | null = null;
+      
+      if (USE_PYTHON_API) {
+        const { data } = await apiClient.get<any[]>('/trips', { 
+          driver_id: formData.driver_id, 
+          status: 'in_progress',
+          limit: 100 
+        });
+        existingTrips = data?.filter(t => t.id !== editingTrip?.id) || null;
+      } else {
+        const supabase = await getCloudClient();
+        const { data } = await supabase
+          .from('trips')
+          .select('id, trip_number')
+          .eq('driver_id', formData.driver_id)
+          .eq('status', 'in_progress')
+          .neq('id', editingTrip?.id || '');
+        existingTrips = data;
+      }
       
       if (existingTrips && existingTrips.length > 0) {
         toast.error(`Driver is already on trip ${existingTrips[0].trip_number}. Complete that trip first before assigning a new one.`);
@@ -444,11 +535,20 @@ export default function TripManagement() {
     // Validate odometer readings when completing a trip
     if (formData.status === 'completed' && editingTrip) {
       // Fetch current trip data to check odometer readings
-      const { data: currentTrip } = await supabase
-        .from('trips')
-        .select('odometer_start, odometer_end, distance_traveled, odometer_return_start, odometer_return_end, distance_return, trip_type')
-        .eq('id', editingTrip.id)
-        .single();
+      let currentTrip: any = null;
+      
+      if (USE_PYTHON_API) {
+        const { data } = await apiClient.get<any>(`/trips/${editingTrip.id}`);
+        currentTrip = data;
+      } else {
+        const supabase = await getCloudClient();
+        const { data } = await supabase
+          .from('trips')
+          .select('odometer_start, odometer_end, distance_traveled, odometer_return_start, odometer_return_end, distance_return, trip_type')
+          .eq('id', editingTrip.id)
+          .single();
+        currentTrip = data;
+      }
 
       if (currentTrip) {
         const hasOutwardOdometer = currentTrip.odometer_start !== null && 
@@ -487,26 +587,50 @@ export default function TripManagement() {
     };
 
     if (editingTrip) {
-      const { error } = await supabase.from('trips').update(payload).eq('id', editingTrip.id);
-
-      if (error) {
-        toast.error('Failed to update trip');
+      if (USE_PYTHON_API) {
+        const { error } = await apiClient.put(`/trips/${editingTrip.id}`, payload);
+        if (error) {
+          toast.error('Failed to update trip');
+        } else {
+          toast.success('Trip updated successfully');
+          setDialogOpen(false);
+          fetchTrips();
+          fetchBusyDrivers();
+        }
       } else {
-        toast.success('Trip updated successfully');
-        setDialogOpen(false);
-        fetchTrips();
-        fetchBusyDrivers();
+        const supabase = await getCloudClient();
+        const { error } = await supabase.from('trips').update(payload).eq('id', editingTrip.id);
+        if (error) {
+          toast.error('Failed to update trip');
+        } else {
+          toast.success('Trip updated successfully');
+          setDialogOpen(false);
+          fetchTrips();
+          fetchBusyDrivers();
+        }
       }
     } else {
-      const { error } = await supabase.from('trips').insert(payload);
-
-      if (error) {
-        toast.error(error.message || 'Failed to add trip');
+      if (USE_PYTHON_API) {
+        const { error } = await apiClient.post('/trips', payload);
+        if (error) {
+          toast.error(error.message || 'Failed to add trip');
+        } else {
+          toast.success('Trip created successfully');
+          setDialogOpen(false);
+          fetchTrips();
+          fetchBusyDrivers();
+        }
       } else {
-        toast.success('Trip created successfully');
-        setDialogOpen(false);
-        fetchTrips();
-        fetchBusyDrivers();
+        const supabase = await getCloudClient();
+        const { error } = await supabase.from('trips').insert(payload);
+        if (error) {
+          toast.error(error.message || 'Failed to add trip');
+        } else {
+          toast.success('Trip created successfully');
+          setDialogOpen(false);
+          fetchTrips();
+          fetchBusyDrivers();
+        }
       }
     }
     setSubmitting(false);

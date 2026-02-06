@@ -20,7 +20,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { supabase } from '@/integrations/supabase/client';
+import apiClient from '@/lib/api-client';
+import { getCloudClient, USE_PYTHON_API } from '@/lib/backend';
 import { Profile, AppRole } from '@/types/database';
 import { UserPlus, Loader2, Pencil, Download, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -99,45 +100,74 @@ export default function DriverManagement() {
   }, []);
 
   async function fetchDrivers() {
-    const { data: roles, error: rolesError } = await supabase
-      .from('user_roles')
-      .select('user_id, role');
+    if (USE_PYTHON_API) {
+      // In Python mode, get all profiles and roles
+      const [profilesRes, rolesRes] = await Promise.all([
+        apiClient.get<any[]>('/drivers'),
+        apiClient.get<any[]>('/drivers/roles'),
+      ]);
+      
+      const profilesData = profilesRes.data || [];
+      const roles = rolesRes.data || [];
+      
+      const driversWithRoles = profilesData.map((profile: any) => {
+        const userRole = roles.find((r: any) => r.user_id === profile.user_id);
+        return {
+          ...profile,
+          role: userRole?.role as AppRole | undefined,
+        };
+      });
 
-    if (rolesError) {
-      toast.error('Failed to fetch roles');
-      return;
+      setDrivers(driversWithRoles);
+      setLoading(false);
+    } else {
+      const supabase = await getCloudClient();
+      const { data: roles, error: rolesError } = await supabase
+        .from('user_roles')
+        .select('user_id, role');
+
+      if (rolesError) {
+        toast.error('Failed to fetch roles');
+        return;
+      }
+
+      const { data: profilesData, error: profilesError } = await supabase
+        .from('profiles')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (profilesError) {
+        toast.error('Failed to fetch profiles');
+        return;
+      }
+
+      const driversWithRoles = profilesData.map((profile) => {
+        const userRole = roles?.find((r) => r.user_id === profile.user_id);
+        return {
+          ...profile,
+          role: userRole?.role as AppRole | undefined,
+        };
+      });
+
+      setDrivers(driversWithRoles);
+      setLoading(false);
     }
-
-    const { data: profilesData, error: profilesError } = await supabase
-      .from('profiles')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    if (profilesError) {
-      toast.error('Failed to fetch profiles');
-      return;
-    }
-
-    const driversWithRoles = profilesData.map((profile) => {
-      const userRole = roles?.find((r) => r.user_id === profile.user_id);
-      return {
-        ...profile,
-        role: userRole?.role as AppRole | undefined,
-      };
-    });
-
-    setDrivers(driversWithRoles);
-    setLoading(false);
   }
 
   async function fetchProfiles() {
-    const { data } = await supabase
-      .from('profiles')
-      .select('*')
-      .order('full_name');
-    
-    if (data) {
-      setProfiles(data);
+    if (USE_PYTHON_API) {
+      const { data } = await apiClient.get<any[]>('/drivers');
+      if (data) setProfiles(data);
+    } else {
+      const supabase = await getCloudClient();
+      const { data } = await supabase
+        .from('profiles')
+        .select('*')
+        .order('full_name');
+      
+      if (data) {
+        setProfiles(data);
+      }
     }
   }
 
@@ -157,33 +187,59 @@ export default function DriverManagement() {
     setSubmitting(true);
 
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      const response = await supabase.functions.invoke('create-driver', {
-        body: newDriver,
-        headers: {
-          Authorization: `Bearer ${session?.access_token}`,
-        },
-      });
-
-      if (response.error) {
-        toast.error(response.error.message || 'Failed to create driver');
-      } else if (response.data?.error) {
-        toast.error(response.data.error);
+      if (USE_PYTHON_API) {
+        // Python API mode - call the create-driver endpoint directly
+        const { data, error } = await apiClient.post('/drivers/create', newDriver);
+        
+        if (error) {
+          toast.error(error.message || 'Failed to create driver');
+        } else if ((data as any)?.error) {
+          toast.error((data as any).error);
+        } else {
+          toast.success('Driver created successfully');
+          setDialogOpen(false);
+          setNewDriver({
+            email: '',
+            password: '',
+            full_name: '',
+            phone: '',
+            license_number: '',
+            license_expiry: '',
+            address: '',
+          });
+          fetchDrivers();
+          fetchProfiles();
+        }
       } else {
-        toast.success('Driver created successfully');
-        setDialogOpen(false);
-        setNewDriver({
-          email: '',
-          password: '',
-          full_name: '',
-          phone: '',
-          license_number: '',
-          license_expiry: '',
-          address: '',
+        const supabase = await getCloudClient();
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        const response = await supabase.functions.invoke('create-driver', {
+          body: newDriver,
+          headers: {
+            Authorization: `Bearer ${session?.access_token}`,
+          },
         });
-        fetchDrivers();
-        fetchProfiles();
+
+        if (response.error) {
+          toast.error(response.error.message || 'Failed to create driver');
+        } else if (response.data?.error) {
+          toast.error(response.data.error);
+        } else {
+          toast.success('Driver created successfully');
+          setDialogOpen(false);
+          setNewDriver({
+            email: '',
+            password: '',
+            full_name: '',
+            phone: '',
+            license_number: '',
+            license_expiry: '',
+            address: '',
+          });
+          fetchDrivers();
+          fetchProfiles();
+        }
       }
     } catch (error) {
       console.error('Error creating driver:', error);
@@ -206,29 +262,11 @@ export default function DriverManagement() {
       return;
     }
 
-    const { data: existingRole } = await supabase
-      .from('user_roles')
-      .select('*')
-      .eq('user_id', profile.user_id)
-      .maybeSingle();
-
-    if (existingRole) {
-      const { error } = await supabase
-        .from('user_roles')
-        .update({ role: selectedRole })
-        .eq('user_id', profile.user_id);
-
-      if (error) {
-        toast.error('Failed to update role');
-      } else {
-        toast.success('Role updated successfully');
-        setDialogOpen(false);
-        fetchDrivers();
-      }
-    } else {
-      const { error } = await supabase
-        .from('user_roles')
-        .insert({ user_id: profile.user_id, role: selectedRole });
+    if (USE_PYTHON_API) {
+      const { error } = await apiClient.post('/drivers/assign-role', {
+        user_id: profile.user_id,
+        role: selectedRole,
+      });
 
       if (error) {
         toast.error('Failed to assign role');
@@ -236,6 +274,40 @@ export default function DriverManagement() {
         toast.success('Role assigned successfully');
         setDialogOpen(false);
         fetchDrivers();
+      }
+    } else {
+      const supabase = await getCloudClient();
+      const { data: existingRole } = await supabase
+        .from('user_roles')
+        .select('*')
+        .eq('user_id', profile.user_id)
+        .maybeSingle();
+
+      if (existingRole) {
+        const { error } = await supabase
+          .from('user_roles')
+          .update({ role: selectedRole })
+          .eq('user_id', profile.user_id);
+
+        if (error) {
+          toast.error('Failed to update role');
+        } else {
+          toast.success('Role updated successfully');
+          setDialogOpen(false);
+          fetchDrivers();
+        }
+      } else {
+        const { error } = await supabase
+          .from('user_roles')
+          .insert({ user_id: profile.user_id, role: selectedRole });
+
+        if (error) {
+          toast.error('Failed to assign role');
+        } else {
+          toast.success('Role assigned successfully');
+          setDialogOpen(false);
+          fetchDrivers();
+        }
       }
     }
 
@@ -253,23 +325,37 @@ export default function DriverManagement() {
 
     setSubmitting(true);
 
-    const { error } = await supabase
-      .from('profiles')
-      .update({
-        full_name: editingDriver.full_name,
-        phone: editingDriver.phone || null,
-        license_number: editingDriver.license_number || null,
-        license_expiry: editingDriver.license_expiry || null,
-        address: editingDriver.address || null,
-      })
-      .eq('id', editingDriver.id);
+    const updateData = {
+      full_name: editingDriver.full_name,
+      phone: editingDriver.phone || null,
+      license_number: editingDriver.license_number || null,
+      license_expiry: editingDriver.license_expiry || null,
+      address: editingDriver.address || null,
+    };
 
-    if (error) {
-      toast.error('Failed to update driver');
+    if (USE_PYTHON_API) {
+      const { error } = await apiClient.put(`/drivers/${editingDriver.id}`, updateData);
+      if (error) {
+        toast.error('Failed to update driver');
+      } else {
+        toast.success('Driver updated successfully');
+        setEditDialogOpen(false);
+        fetchDrivers();
+      }
     } else {
-      toast.success('Driver updated successfully');
-      setEditDialogOpen(false);
-      fetchDrivers();
+      const supabase = await getCloudClient();
+      const { error } = await supabase
+        .from('profiles')
+        .update(updateData)
+        .eq('id', editingDriver.id);
+
+      if (error) {
+        toast.error('Failed to update driver');
+      } else {
+        toast.success('Driver updated successfully');
+        setEditDialogOpen(false);
+        fetchDrivers();
+      }
     }
 
     setSubmitting(false);
@@ -278,35 +364,48 @@ export default function DriverManagement() {
   async function handleDeleteDriver(driver: DriverWithRole) {
     setDeletingDriver(driver);
     
-    // Check if driver has active (non-completed) trips
-    const { count: activeTrips, error: activeError } = await supabase
-      .from('trips')
-      .select('*', { count: 'exact', head: true })
-      .eq('driver_id', driver.id)
-      .neq('status', 'completed');
+    let activeTrips = 0;
+    let pendingExpenses = 0;
 
-    if (activeError) {
-      toast.error('Failed to check driver dependencies');
-      return;
+    if (USE_PYTHON_API) {
+      // In Python mode, we'll check via API
+      const { data: trips } = await apiClient.get<any[]>('/trips', { driver_id: driver.id, limit: 1000 });
+      activeTrips = (trips || []).filter(t => t.status !== 'completed').length;
+      
+      const { data: expenses } = await apiClient.get<any[]>('/expenses', { submitted_by: driver.id, status: 'pending', limit: 1000 });
+      pendingExpenses = (expenses || []).length;
+    } else {
+      const supabase = await getCloudClient();
+      // Check if driver has active (non-completed) trips
+      const { count: activeCount, error: activeError } = await supabase
+        .from('trips')
+        .select('*', { count: 'exact', head: true })
+        .eq('driver_id', driver.id)
+        .neq('status', 'completed');
+
+      if (activeError) {
+        toast.error('Failed to check driver dependencies');
+        return;
+      }
+
+      // Check if driver has pending expenses
+      const { count: expenseCount, error: expensesError } = await supabase
+        .from('expenses')
+        .select('*', { count: 'exact', head: true })
+        .eq('submitted_by', driver.id)
+        .eq('status', 'pending');
+
+      if (expensesError) {
+        toast.error('Failed to check driver dependencies');
+        return;
+      }
+
+      activeTrips = activeCount || 0;
+      pendingExpenses = expenseCount || 0;
     }
 
-    // Check if driver has pending expenses
-    const { count: pendingExpenses, error: expensesError } = await supabase
-      .from('expenses')
-      .select('*', { count: 'exact', head: true })
-      .eq('submitted_by', driver.id)
-      .eq('status', 'pending');
-
-    if (expensesError) {
-      toast.error('Failed to check driver dependencies');
-      return;
-    }
-
-    const trips = activeTrips || 0;
-    const expenses = pendingExpenses || 0;
-
-    setRelatedDataInfo({ trips, expenses });
-    setHasRelatedData(trips > 0 || expenses > 0);
+    setRelatedDataInfo({ trips: activeTrips, expenses: pendingExpenses });
+    setHasRelatedData(activeTrips > 0 || pendingExpenses > 0);
     setDeleteDialogOpen(true);
   }
 
@@ -315,42 +414,56 @@ export default function DriverManagement() {
 
     setDeleting(true);
 
-    // First, update all trips with this driver to store the driver name snapshot
-    const { error: snapshotError } = await supabase
-      .from('trips')
-      .update({ driver_name_snapshot: deletingDriver.full_name })
-      .eq('driver_id', deletingDriver.id);
-
-    if (snapshotError) {
-      toast.error('Failed to preserve trip history');
-      setDeleting(false);
-      return;
-    }
-
-    // Delete from user_roles
-    const { error: roleError } = await supabase
-      .from('user_roles')
-      .delete()
-      .eq('user_id', deletingDriver.user_id);
-
-    if (roleError) {
-      toast.error('Failed to delete driver role');
-      setDeleting(false);
-      return;
-    }
-
-    // Then, delete from profiles
-    const { error: profileError } = await supabase
-      .from('profiles')
-      .delete()
-      .eq('id', deletingDriver.id);
-
-    if (profileError) {
-      toast.error('Failed to delete driver profile');
+    if (USE_PYTHON_API) {
+      // Delete via Python API
+      const { error } = await apiClient.delete(`/drivers/${deletingDriver.id}`);
+      if (error) {
+        toast.error('Failed to delete driver');
+      } else {
+        toast.success('Driver deleted successfully');
+        fetchDrivers();
+        fetchProfiles();
+      }
     } else {
-      toast.success('Driver deleted successfully');
-      fetchDrivers();
-      fetchProfiles();
+      const supabase = await getCloudClient();
+      
+      // First, update all trips with this driver to store the driver name snapshot
+      const { error: snapshotError } = await supabase
+        .from('trips')
+        .update({ driver_name_snapshot: deletingDriver.full_name })
+        .eq('driver_id', deletingDriver.id);
+
+      if (snapshotError) {
+        toast.error('Failed to preserve trip history');
+        setDeleting(false);
+        return;
+      }
+
+      // Delete from user_roles
+      const { error: roleError } = await supabase
+        .from('user_roles')
+        .delete()
+        .eq('user_id', deletingDriver.user_id);
+
+      if (roleError) {
+        toast.error('Failed to delete driver role');
+        setDeleting(false);
+        return;
+      }
+
+      // Then, delete from profiles
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .delete()
+        .eq('id', deletingDriver.id);
+
+      if (profileError) {
+        toast.error('Failed to delete driver profile');
+      } else {
+        toast.success('Driver deleted successfully');
+        fetchDrivers();
+        fetchProfiles();
+      }
     }
 
     setDeleting(false);
