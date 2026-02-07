@@ -4,7 +4,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { supabase } from '@/integrations/supabase/client';
+import { USE_PYTHON_API, getCloudClient } from '@/lib/backend';
+import { apiClient } from '@/lib/api-client';
 import { Trip } from '@/types/database';
 import { Loader2, ArrowRight, ArrowLeft, Receipt } from 'lucide-react';
 import { toast } from 'sonner';
@@ -117,14 +118,21 @@ export default function TripRevenueDialog({ open, onOpenChange, trip, onSuccess 
   // Fetch GST percentage from settings
   useEffect(() => {
     async function fetchGstSetting() {
-      const { data } = await supabase
-        .from('admin_settings')
-        .select('value')
-        .eq('key', 'gst_percentage')
-        .single();
-      
-      if (data?.value) {
-        setGstPercentage(parseFloat(data.value) || 18);
+      if (USE_PYTHON_API) {
+        const { data } = await apiClient.get<any>('/settings/gst_percentage');
+        if (data?.value) {
+          setGstPercentage(parseFloat(data.value) || 18);
+        }
+      } else {
+        const supabase = await getCloudClient();
+        const { data } = await supabase
+          .from('admin_settings')
+          .select('value')
+          .eq('key', 'gst_percentage')
+          .single();
+        if (data?.value) {
+          setGstPercentage(parseFloat(data.value) || 18);
+        }
       }
     }
     fetchGstSetting();
@@ -162,10 +170,15 @@ export default function TripRevenueDialog({ open, onOpenChange, trip, onSuccess 
       updateData.return_total_revenue = returnTotalValue;
     }
 
-    const { error } = await supabase
-      .from('trips')
-      .update(updateData)
-      .eq('id', trip.id);
+    let error: any = null;
+    if (USE_PYTHON_API) {
+      const res = await apiClient.put(`/trips/${trip.id}`, updateData);
+      error = res.error;
+    } else {
+      const supabase = await getCloudClient();
+      const res = await supabase.from('trips').update(updateData).eq('id', trip.id);
+      error = res.error;
+    }
 
     if (error) {
       console.error('Revenue update error:', error);

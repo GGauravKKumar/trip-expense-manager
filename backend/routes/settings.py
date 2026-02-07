@@ -43,10 +43,20 @@ async def get_setting(
     current_user: TokenData = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
-    """Get a single setting by key"""
+    """Get a single setting by key, returns default if not found"""
+    # Default values for known settings
+    defaults = {
+        "expiry_alert_days": "30",
+        "fuel_price_per_liter": "90",
+        "gst_percentage": "18",
+    }
+    
     setting = db.query(AdminSetting).filter(AdminSetting.key == key).first()
     
     if not setting:
+        default_val = defaults.get(key)
+        if default_val is not None:
+            return {"id": None, "key": key, "value": default_val, "description": None}
         raise HTTPException(status_code=404, detail="Setting not found")
     
     return {
@@ -55,6 +65,31 @@ async def get_setting(
         "value": setting.value,
         "description": setting.description
     }
+
+
+@router.put("")
+async def update_settings_bulk(
+    body: dict,
+    current_user: TokenData = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """Bulk update settings (admin only) - accepts { settings: [{key, value}] }"""
+    settings_list = body.get("settings", [])
+    results = []
+    for item in settings_list:
+        key = item.get("key")
+        value = item.get("value", "")
+        if not key:
+            continue
+        setting = db.query(AdminSetting).filter(AdminSetting.key == key).first()
+        if not setting:
+            setting = AdminSetting(id=uuid.uuid4(), key=key, value=value)
+            db.add(setting)
+        else:
+            setting.value = value
+        results.append({"key": key, "value": value})
+    db.commit()
+    return results
 
 
 @router.put("/{key}")
