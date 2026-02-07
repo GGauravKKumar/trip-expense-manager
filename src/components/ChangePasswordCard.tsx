@@ -3,7 +3,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { supabase } from '@/integrations/supabase/client';
+import { USE_PYTHON_API, getCloudClient } from '@/lib/backend';
+import { apiClient } from '@/lib/api-client';
 import { Loader2, Lock, Eye, EyeOff } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -21,7 +22,6 @@ export default function ChangePasswordCard() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
 
-    // Validation
     if (formData.newPassword.length < 8) {
       toast.error('Password must be at least 8 characters');
       return;
@@ -35,40 +35,46 @@ export default function ChangePasswordCard() {
     setLoading(true);
 
     try {
-      // First, verify the current password by re-authenticating
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user?.email) {
-        toast.error('Unable to verify user');
-        setLoading(false);
-        return;
-      }
-
-      // Try to sign in with current password to verify it
-      const { error: signInError } = await supabase.auth.signInWithPassword({
-        email: user.email,
-        password: formData.currentPassword,
-      });
-
-      if (signInError) {
-        toast.error('Current password is incorrect');
-        setLoading(false);
-        return;
-      }
-
-      // Update to new password
-      const { error: updateError } = await supabase.auth.updateUser({
-        password: formData.newPassword,
-      });
-
-      if (updateError) {
-        toast.error(updateError.message);
+      if (USE_PYTHON_API) {
+        const { error } = await apiClient.changePassword(formData.currentPassword, formData.newPassword);
+        if (error) {
+          toast.error(error.message || 'Failed to update password');
+        } else {
+          toast.success('Password updated successfully');
+          setFormData({ currentPassword: '', newPassword: '', confirmPassword: '' });
+        }
       } else {
-        toast.success('Password updated successfully');
-        setFormData({
-          currentPassword: '',
-          newPassword: '',
-          confirmPassword: '',
+        const supabase = await getCloudClient();
+        
+        // First, verify the current password by re-authenticating
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user?.email) {
+          toast.error('Unable to verify user');
+          setLoading(false);
+          return;
+        }
+
+        const { error: signInError } = await supabase.auth.signInWithPassword({
+          email: user.email,
+          password: formData.currentPassword,
         });
+
+        if (signInError) {
+          toast.error('Current password is incorrect');
+          setLoading(false);
+          return;
+        }
+
+        const { error: updateError } = await supabase.auth.updateUser({
+          password: formData.newPassword,
+        });
+
+        if (updateError) {
+          toast.error(updateError.message);
+        } else {
+          toast.success('Password updated successfully');
+          setFormData({ currentPassword: '', newPassword: '', confirmPassword: '' });
+        }
       }
     } catch (error) {
       console.error('Password change error:', error);

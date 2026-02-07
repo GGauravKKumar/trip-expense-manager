@@ -6,7 +6,8 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
-import { supabase } from '@/integrations/supabase/client';
+import { USE_PYTHON_API, getCloudClient } from '@/lib/backend';
+import { apiClient } from '@/lib/api-client';
 import { Loader2, Plus, Trash2, ArrowUpRight, ArrowDownLeft } from 'lucide-react';
 import { toast } from 'sonner';
 import { 
@@ -43,17 +44,14 @@ export default function InvoiceDialog({ open, onOpenChange, invoice, direction, 
     invoice_number: '',
     invoice_date: new Date().toISOString().split('T')[0],
     due_date: '',
-    // For sales
     customer_name: '',
     customer_address: '',
     customer_phone: '',
     customer_gst: '',
-    // For purchase
     vendor_name: '',
     vendor_address: '',
     vendor_phone: '',
     vendor_gst: '',
-    // Common
     invoice_type: 'customer' as InvoiceType,
     category: 'general' as InvoiceCategory,
     notes: '',
@@ -67,7 +65,6 @@ export default function InvoiceDialog({ open, onOpenChange, invoice, direction, 
 
   useEffect(() => {
     if (open && invoice) {
-      // Load existing invoice data
       setFormData({
         invoice_number: invoice.invoice_number,
         invoice_date: invoice.invoice_date,
@@ -87,7 +84,6 @@ export default function InvoiceDialog({ open, onOpenChange, invoice, direction, 
       });
       fetchLineItems(invoice.id);
     } else if (open) {
-      // Reset form for new invoice
       setFormData({
         invoice_number: '',
         invoice_date: new Date().toISOString().split('T')[0],
@@ -111,15 +107,23 @@ export default function InvoiceDialog({ open, onOpenChange, invoice, direction, 
 
   async function fetchLineItems(invoiceId: string) {
     setLoadingItems(true);
-    const { data, error } = await supabase
-      .from('invoice_line_items')
-      .select('*')
-      .eq('invoice_id', invoiceId)
-      .order('created_at');
+    
+    let data: any[] | null = null;
+    if (USE_PYTHON_API) {
+      const res = await apiClient.get<any[]>(`/invoices/${invoiceId}/line-items`);
+      data = res.data;
+    } else {
+      const supabase = await getCloudClient();
+      const res = await supabase
+        .from('invoice_line_items')
+        .select('*')
+        .eq('invoice_id', invoiceId)
+        .order('created_at');
+      if (res.error) console.error('Error fetching line items:', res.error);
+      data = res.data;
+    }
 
-    if (error) {
-      console.error('Error fetching line items:', error);
-    } else if (data && data.length > 0) {
+    if (data && data.length > 0) {
       setLineItems(
         (data as InvoiceLineItem[]).map((item) => ({
           id: item.id,
@@ -194,17 +198,25 @@ export default function InvoiceDialog({ open, onOpenChange, invoice, direction, 
     const dateStr = date.toISOString().slice(2, 10).replace(/-/g, '');
     const prefix = isSales ? 'INV' : 'PUR';
     
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-    
-    const { count } = await supabase
-      .from('invoices')
-      .select('*', { count: 'exact', head: true })
-      .eq('direction', direction)
-      .gte('created_at', todayStart.toISOString());
-    
-    const sequence = ((count || 0) + 1).toString().padStart(3, '0');
-    return `${prefix}${dateStr}${sequence}`;
+    if (USE_PYTHON_API) {
+      const { data } = await apiClient.get<any[]>('/invoices', { direction });
+      const count = data?.length || 0;
+      const sequence = (count + 1).toString().padStart(3, '0');
+      return `${prefix}${dateStr}${sequence}`;
+    } else {
+      const supabase = await getCloudClient();
+      const todayStart = new Date();
+      todayStart.setHours(0, 0, 0, 0);
+      
+      const { count } = await supabase
+        .from('invoices')
+        .select('*', { count: 'exact', head: true })
+        .eq('direction', direction)
+        .gte('created_at', todayStart.toISOString());
+      
+      const sequence = ((count || 0) + 1).toString().padStart(3, '0');
+      return `${prefix}${dateStr}${sequence}`;
+    }
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -225,12 +237,27 @@ export default function InvoiceDialog({ open, onOpenChange, invoice, direction, 
 
     try {
       const { subtotal, gstAmount, totalAmount } = calculateTotals();
+      const lineItemsToProcess = lineItems
+        .filter((item) => item.description)
+        .map((item) => {
+          const amounts = calculateLineItemAmounts(item);
+          return {
+            description: item.description,
+            quantity: item.quantity,
+            unit_price: item.unit_price,
+            amount: amounts.totalAmount,
+            is_deduction: item.is_deduction,
+            gst_percentage: item.gst_percentage,
+            rate_includes_gst: item.rate_includes_gst,
+            base_amount: amounts.baseAmount,
+            gst_amount: amounts.gstAmount,
+          };
+        });
 
-      if (invoice) {
-        // Update existing invoice
-        const { error: invoiceError } = await supabase
-          .from('invoices')
-          .update({
+      if (USE_PYTHON_API) {
+        if (invoice) {
+          // Update existing
+          const { error } = await apiClient.put(`/invoices/${invoice.id}`, {
             invoice_date: formData.invoice_date,
             due_date: formData.due_date || null,
             customer_name: formData.customer_name || formData.vendor_name,
@@ -249,45 +276,13 @@ export default function InvoiceDialog({ open, onOpenChange, invoice, direction, 
             balance_due: totalAmount - invoice.amount_paid,
             notes: formData.notes || null,
             terms: formData.terms || null,
-          })
-          .eq('id', invoice.id);
-
-        if (invoiceError) throw invoiceError;
-
-        // Delete existing line items and re-insert
-        await supabase.from('invoice_line_items').delete().eq('invoice_id', invoice.id);
-
-        const lineItemsToInsert = lineItems
-          .filter((item) => item.description)
-          .map((item) => {
-            const amounts = calculateLineItemAmounts(item);
-            return {
-              invoice_id: invoice.id,
-              description: item.description,
-              quantity: item.quantity,
-              unit_price: item.unit_price,
-              amount: amounts.totalAmount,
-              is_deduction: item.is_deduction,
-              gst_percentage: item.gst_percentage,
-              rate_includes_gst: item.rate_includes_gst,
-              base_amount: amounts.baseAmount,
-              gst_amount: amounts.gstAmount,
-            };
+            line_items: lineItemsToProcess,
           });
-
-        if (lineItemsToInsert.length > 0) {
-          const { error: itemsError } = await supabase.from('invoice_line_items').insert(lineItemsToInsert);
-          if (itemsError) throw itemsError;
-        }
-
-        toast.success('Invoice updated successfully');
-      } else {
-        // Create new invoice
-        const invoiceNumber = formData.invoice_number.trim() || await generateInvoiceNumber();
-
-        const { data: newInvoice, error: invoiceError } = await supabase
-          .from('invoices')
-          .insert({
+          if (error) throw error;
+          toast.success('Invoice updated successfully');
+        } else {
+          const invoiceNumber = formData.invoice_number.trim() || await generateInvoiceNumber();
+          const { error } = await apiClient.post('/invoices', {
             invoice_number: invoiceNumber,
             invoice_date: formData.invoice_date,
             due_date: formData.due_date || null,
@@ -310,37 +305,92 @@ export default function InvoiceDialog({ open, onOpenChange, invoice, direction, 
             status: 'draft',
             notes: formData.notes || null,
             terms: formData.terms || null,
-          })
-          .select()
-          .single();
-
-        if (invoiceError) throw invoiceError;
-
-        // Insert line items
-        const lineItemsToInsert = lineItems
-          .filter((item) => item.description)
-          .map((item) => {
-            const amounts = calculateLineItemAmounts(item);
-            return {
-              invoice_id: newInvoice.id,
-              description: item.description,
-              quantity: item.quantity,
-              unit_price: item.unit_price,
-              amount: amounts.totalAmount,
-              is_deduction: item.is_deduction,
-              gst_percentage: item.gst_percentage,
-              rate_includes_gst: item.rate_includes_gst,
-              base_amount: amounts.baseAmount,
-              gst_amount: amounts.gstAmount,
-            };
+            line_items: lineItemsToProcess,
           });
-
-        if (lineItemsToInsert.length > 0) {
-          const { error: itemsError } = await supabase.from('invoice_line_items').insert(lineItemsToInsert);
-          if (itemsError) throw itemsError;
+          if (error) throw error;
+          toast.success(`${isSales ? 'Sales' : 'Purchase'} invoice created`);
         }
+      } else {
+        const supabase = await getCloudClient();
 
-        toast.success(`${isSales ? 'Sales' : 'Purchase'} invoice ${invoiceNumber} created`);
+        if (invoice) {
+          const { error: invoiceError } = await supabase
+            .from('invoices')
+            .update({
+              invoice_date: formData.invoice_date,
+              due_date: formData.due_date || null,
+              customer_name: formData.customer_name || formData.vendor_name,
+              customer_address: formData.customer_address || null,
+              customer_phone: formData.customer_phone || null,
+              customer_gst: formData.customer_gst || null,
+              vendor_name: formData.vendor_name || null,
+              vendor_address: formData.vendor_address || null,
+              vendor_phone: formData.vendor_phone || null,
+              vendor_gst: formData.vendor_gst || null,
+              invoice_type: formData.invoice_type,
+              category: formData.category,
+              subtotal,
+              gst_amount: gstAmount,
+              total_amount: totalAmount,
+              balance_due: totalAmount - invoice.amount_paid,
+              notes: formData.notes || null,
+              terms: formData.terms || null,
+            })
+            .eq('id', invoice.id);
+
+          if (invoiceError) throw invoiceError;
+
+          await supabase.from('invoice_line_items').delete().eq('invoice_id', invoice.id);
+
+          const itemsWithInvoiceId = lineItemsToProcess.map(item => ({ ...item, invoice_id: invoice.id }));
+          if (itemsWithInvoiceId.length > 0) {
+            const { error: itemsError } = await supabase.from('invoice_line_items').insert(itemsWithInvoiceId);
+            if (itemsError) throw itemsError;
+          }
+
+          toast.success('Invoice updated successfully');
+        } else {
+          const invoiceNumber = formData.invoice_number.trim() || await generateInvoiceNumber();
+
+          const { data: newInvoice, error: invoiceError } = await supabase
+            .from('invoices')
+            .insert({
+              invoice_number: invoiceNumber,
+              invoice_date: formData.invoice_date,
+              due_date: formData.due_date || null,
+              direction,
+              category: formData.category,
+              customer_name: formData.customer_name || formData.vendor_name,
+              customer_address: formData.customer_address || null,
+              customer_phone: formData.customer_phone || null,
+              customer_gst: formData.customer_gst || null,
+              vendor_name: formData.vendor_name || null,
+              vendor_address: formData.vendor_address || null,
+              vendor_phone: formData.vendor_phone || null,
+              vendor_gst: formData.vendor_gst || null,
+              invoice_type: formData.invoice_type,
+              subtotal,
+              gst_amount: gstAmount,
+              total_amount: totalAmount,
+              amount_paid: 0,
+              balance_due: totalAmount,
+              status: 'draft',
+              notes: formData.notes || null,
+              terms: formData.terms || null,
+            })
+            .select()
+            .single();
+
+          if (invoiceError) throw invoiceError;
+
+          const itemsWithInvoiceId = lineItemsToProcess.map(item => ({ ...item, invoice_id: newInvoice.id }));
+          if (itemsWithInvoiceId.length > 0) {
+            const { error: itemsError } = await supabase.from('invoice_line_items').insert(itemsWithInvoiceId);
+            if (itemsError) throw itemsError;
+          }
+
+          toast.success(`${isSales ? 'Sales' : 'Purchase'} invoice ${invoiceNumber} created`);
+        }
       }
 
       onOpenChange(false);
@@ -522,7 +572,6 @@ export default function InvoiceDialog({ open, onOpenChange, invoice, direction, 
                       key={index}
                       className={`space-y-4 p-4 rounded-lg border ${item.is_deduction ? 'bg-destructive/5 border-destructive/20' : 'bg-muted/30'}`}
                     >
-                      {/* Row 1: Description and Delete */}
                       <div className="flex gap-3 items-start">
                         <div className="flex-1 space-y-1.5">
                           <Label className="text-xs font-medium">Description</Label>
@@ -544,7 +593,6 @@ export default function InvoiceDialog({ open, onOpenChange, invoice, direction, 
                         </Button>
                       </div>
 
-                      {/* Row 2: Qty, Rate, GST % */}
                       <div className="grid grid-cols-3 gap-4">
                         <div className="space-y-1.5">
                           <Label className="text-xs font-medium">Quantity</Label>
@@ -577,7 +625,6 @@ export default function InvoiceDialog({ open, onOpenChange, invoice, direction, 
                         </div>
                       </div>
 
-                      {/* Row 3: Checkboxes */}
                       <div className="flex flex-wrap items-center gap-6">
                         <div className="flex items-center gap-2">
                           <Checkbox
@@ -601,7 +648,6 @@ export default function InvoiceDialog({ open, onOpenChange, invoice, direction, 
                         </div>
                       </div>
 
-                      {/* Row 4: Amount breakdown */}
                       <div className={`p-3 rounded-md bg-background border ${item.is_deduction ? 'border-destructive/30' : 'border-border'}`}>
                         <div className="flex justify-between items-center text-sm">
                           <span className="text-muted-foreground">Amount Breakdown:</span>

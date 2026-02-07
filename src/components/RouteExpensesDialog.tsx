@@ -3,7 +3,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { supabase } from '@/integrations/supabase/client';
+import { USE_PYTHON_API, getCloudClient } from '@/lib/backend';
+import { apiClient } from '@/lib/api-client';
 import { Loader2, Download } from 'lucide-react';
 import { exportToExcel, formatCurrency, formatDate } from '@/lib/exportUtils';
 import { ExpenseStatus } from '@/types/database';
@@ -44,38 +45,47 @@ export default function RouteExpensesDialog({
 
   async function fetchExpenses() {
     setLoading(true);
-    
-    // First get all trips for this route
-    const { data: trips } = await supabase
-      .from('trips')
-      .select('id')
-      .eq('route_id', routeId);
 
-    if (!trips || trips.length === 0) {
-      setExpenses([]);
-      setTotalAmount(0);
-      setLoading(false);
-      return;
-    }
-
-    const tripIds = trips.map(t => t.id);
-
-    // Then get all expenses for those trips
-    const { data, error } = await supabase
-      .from('expenses')
-      .select(`
-        id, amount, expense_date, status, description,
-        trip:trips(trip_number),
-        category:expense_categories(name),
-        submitter:profiles!expenses_submitted_by_fkey(full_name)
-      `)
-      .in('trip_id', tripIds)
-      .eq('status', 'approved')
-      .order('expense_date', { ascending: false });
-
-    if (!error && data) {
+    if (USE_PYTHON_API) {
+      // Python API: get expenses by route
+      const res = await apiClient.get<any[]>('/expenses', { route_id: routeId, status: 'approved' });
+      const data = res.data || [];
       setExpenses(data as RouteExpense[]);
       setTotalAmount(data.reduce((sum, e) => sum + Number(e.amount), 0));
+    } else {
+      const supabase = await getCloudClient();
+      
+      // First get all trips for this route
+      const { data: trips } = await supabase
+        .from('trips')
+        .select('id')
+        .eq('route_id', routeId);
+
+      if (!trips || trips.length === 0) {
+        setExpenses([]);
+        setTotalAmount(0);
+        setLoading(false);
+        return;
+      }
+
+      const tripIds = trips.map(t => t.id);
+
+      const { data, error } = await supabase
+        .from('expenses')
+        .select(`
+          id, amount, expense_date, status, description,
+          trip:trips(trip_number),
+          category:expense_categories(name),
+          submitter:profiles!expenses_submitted_by_fkey(full_name)
+        `)
+        .in('trip_id', tripIds)
+        .eq('status', 'approved')
+        .order('expense_date', { ascending: false });
+
+      if (!error && data) {
+        setExpenses(data as RouteExpense[]);
+        setTotalAmount(data.reduce((sum, e) => sum + Number(e.amount), 0));
+      }
     }
     setLoading(false);
   }
