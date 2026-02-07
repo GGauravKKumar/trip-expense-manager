@@ -3,7 +3,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { supabase } from '@/integrations/supabase/client';
+import { USE_PYTHON_API, getCloudClient } from '@/lib/backend';
+import { apiClient } from '@/lib/api-client';
 import { Loader2, Download } from 'lucide-react';
 import { exportToExcel, formatCurrency, formatDate } from '@/lib/exportUtils';
 import { ExpenseStatus } from '@/types/database';
@@ -44,17 +45,26 @@ export default function TripExpensesDialog({
   async function fetchExpenses() {
     setLoading(true);
 
-    const { data, error } = await supabase
-      .from('expenses')
-      .select(`
-        id, amount, expense_date, status, description,
-        category:expense_categories(name),
-        submitter:profiles!expenses_submitted_by_fkey(full_name)
-      `)
-      .eq('trip_id', tripId)
-      .order('expense_date', { ascending: false });
+    let data: any[] | null = null;
 
-    if (!error && data) {
+    if (USE_PYTHON_API) {
+      const res = await apiClient.get<any[]>('/expenses', { trip_id: tripId });
+      data = res.data;
+    } else {
+      const supabase = await getCloudClient();
+      const res = await supabase
+        .from('expenses')
+        .select(`
+          id, amount, expense_date, status, description,
+          category:expense_categories(name),
+          submitter:profiles!expenses_submitted_by_fkey(full_name)
+        `)
+        .eq('trip_id', tripId)
+        .order('expense_date', { ascending: false });
+      data = res.data;
+    }
+
+    if (data) {
       setExpenses(data as TripExpense[]);
       
       const approved = data.filter(e => e.status === 'approved');

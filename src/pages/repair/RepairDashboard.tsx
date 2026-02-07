@@ -11,7 +11,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { supabase } from '@/integrations/supabase/client';
+import { USE_PYTHON_API, getCloudClient } from '@/lib/backend';
+import { apiClient } from '@/lib/api-client';
 import { useAuth } from '@/hooks/useAuth';
 import { Loader2, Plus, Wrench, FileText, Upload, Camera, User } from 'lucide-react';
 import { toast } from 'sonner';
@@ -95,17 +96,28 @@ export default function RepairDashboard() {
   async function fetchProfile() {
     if (!user) return;
     
-    const { data } = await supabase
-      .from('profiles')
-      .select('id, user_id, repair_org_id')
-      .eq('user_id', user.id)
-      .single();
-    
-    if (data) {
-      setProfile(data);
-      fetchData(data.repair_org_id);
+    if (USE_PYTHON_API) {
+      const { data } = await apiClient.get<any>('/drivers/me');
+      if (data) {
+        setProfile({ id: data.id, user_id: data.user_id, repair_org_id: data.repair_org_id });
+        fetchData(data.repair_org_id);
+      } else {
+        setLoading(false);
+      }
     } else {
-      setLoading(false);
+      const supabase = await getCloudClient();
+      const { data } = await supabase
+        .from('profiles')
+        .select('id, user_id, repair_org_id')
+        .eq('user_id', user.id)
+        .single();
+      
+      if (data) {
+        setProfile(data);
+        fetchData(data.repair_org_id);
+      } else {
+        setLoading(false);
+      }
     }
   }
 
@@ -116,39 +128,41 @@ export default function RepairDashboard() {
     }
 
     try {
-      // Fetch organization details
-      const { data: orgData } = await supabase
-        .from('repair_organizations')
-        // @ts-ignore - table exists after migration
-        .select('id, org_code, org_name')
-        .eq('id', repairOrgId)
-        .single();
+      if (USE_PYTHON_API) {
+        const [orgRes, recordsRes, busesRes] = await Promise.all([
+          apiClient.get<any>(`/repairs/organizations/${repairOrgId}`),
+          apiClient.get<any[]>('/repairs', { organization_id: repairOrgId }),
+          apiClient.get<any[]>('/buses', { status: 'active' }),
+        ]);
+        if (orgRes.data) setOrganization(orgRes.data);
+        if (recordsRes.data) setRecords(recordsRes.data);
+        if (busesRes.data) setBuses(busesRes.data);
+      } else {
+        const supabase = await getCloudClient();
 
-      if (orgData) {
-        setOrganization(orgData);
-      }
+        const { data: orgData } = await supabase
+          .from('repair_organizations')
+          .select('id, org_code, org_name')
+          .eq('id', repairOrgId)
+          .single();
 
-      // Fetch repair records for this organization
-      const { data: recordsData } = await supabase
-        // @ts-ignore - table exists after migration
-        .from('repair_records')
-        .select('*')
-        .eq('organization_id', repairOrgId)
-        .order('created_at', { ascending: false });
+        if (orgData) setOrganization(orgData);
 
-      if (recordsData) {
-        setRecords(recordsData);
-      }
+        const { data: recordsData } = await supabase
+          .from('repair_records')
+          .select('*')
+          .eq('organization_id', repairOrgId)
+          .order('created_at', { ascending: false });
 
-      // Fetch buses for selection
-      const { data: busesData } = await supabase
-        .from('buses')
-        .select('id, registration_number, bus_name')
-        .eq('status', 'active')
-        .order('registration_number');
+        if (recordsData) setRecords(recordsData);
 
-      if (busesData) {
-        setBuses(busesData);
+        const { data: busesData } = await supabase
+          .from('buses')
+          .select('id, registration_number, bus_name')
+          .eq('status', 'active')
+          .order('registration_number');
+
+        if (busesData) setBuses(busesData);
       }
     } catch (error) {
       console.error('Error fetching data:', error);
@@ -193,29 +207,35 @@ export default function RepairDashboard() {
   }
 
   async function uploadPhoto(file: File, prefix: string): Promise<string | null> {
-    const fileExt = file.name.split('.').pop();
-    const fileName = `${profile?.user_id}/${prefix}-${Date.now()}.${fileExt}`;
+    if (USE_PYTHON_API) {
+      const { data, error } = await apiClient.uploadFile('repair', file);
+      if (error || !data) return null;
+      return data.url;
+    } else {
+      const supabase = await getCloudClient();
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${profile?.user_id}/${prefix}-${Date.now()}.${fileExt}`;
 
-    const { error: uploadError } = await supabase.storage
-      .from('repair-photos')
-      .upload(fileName, file);
+      const { error: uploadError } = await supabase.storage
+        .from('repair-photos')
+        .upload(fileName, file);
 
-    if (uploadError) {
-      console.error('Upload error:', uploadError);
-      return null;
+      if (uploadError) {
+        console.error('Upload error:', uploadError);
+        return null;
+      }
+
+      const { data, error } = await supabase.storage
+        .from('repair-photos')
+        .createSignedUrl(fileName, 14400);
+      
+      if (error || !data?.signedUrl) {
+        console.error('Error creating signed URL:', error);
+        return null;
+      }
+      
+      return data.signedUrl;
     }
-
-    // Use signed URL for secure access (4 hour expiry)
-    const { data, error } = await supabase.storage
-      .from('repair-photos')
-      .createSignedUrl(fileName, 14400);
-    
-    if (error || !data?.signedUrl) {
-      console.error('Error creating signed URL:', error);
-      return null;
-    }
-    
-    return data.signedUrl;
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -233,7 +253,6 @@ export default function RepairDashboard() {
       let photoBeforeUrl: string | null = null;
       let photoAfterUrl: string | null = null;
 
-      // Upload photos if provided
       if (beforePhoto) {
         photoBeforeUrl = await uploadPhoto(beforePhoto, 'before');
       }
@@ -242,8 +261,7 @@ export default function RepairDashboard() {
       }
 
       const repairNumber = generateRepairNumber();
-
-      const { error } = await supabase.from('repair_records').insert({
+      const repairData = {
         repair_number: repairNumber,
         organization_id: organization.id,
         bus_id: formData.bus_id || null,
@@ -261,9 +279,16 @@ export default function RepairDashboard() {
         submitted_by: profile.id,
         gst_applicable: formData.gst_applicable,
         gst_amount: formData.gst_applicable ? (parseFloat(formData.gst_amount) || 0) : 0,
-      });
+      };
 
-      if (error) throw error;
+      if (USE_PYTHON_API) {
+        const { error } = await apiClient.post('/repairs', repairData);
+        if (error) throw error;
+      } else {
+        const supabase = await getCloudClient();
+        const { error } = await supabase.from('repair_records').insert(repairData);
+        if (error) throw error;
+      }
 
       toast.success('Repair record submitted successfully');
       setDialogOpen(false);

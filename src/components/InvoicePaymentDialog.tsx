@@ -5,7 +5,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { supabase } from '@/integrations/supabase/client';
+import { USE_PYTHON_API, getCloudClient } from '@/lib/backend';
+import { apiClient } from '@/lib/api-client';
 import { useAuth } from '@/hooks/useAuth';
 import { Loader2, CreditCard } from 'lucide-react';
 import { toast } from 'sonner';
@@ -56,47 +57,60 @@ export default function InvoicePaymentDialog({ invoice, open, onOpenChange, onSu
     setLoading(true);
 
     try {
-      // Get profile ID
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('id')
-        .eq('user_id', user?.id)
-        .single();
+      if (USE_PYTHON_API) {
+        const { error } = await apiClient.post(`/invoices/${invoice.id}/payments`, {
+          payment_date: formData.payment_date,
+          amount,
+          payment_mode: formData.payment_mode,
+          reference_number: formData.reference_number || null,
+          notes: formData.notes || null,
+        });
+        if (error) throw error;
+      } else {
+        const supabase = await getCloudClient();
 
-      // Insert payment
-      const { error: paymentError } = await supabase.from('invoice_payments').insert({
-        invoice_id: invoice.id,
-        payment_date: formData.payment_date,
-        amount,
-        payment_mode: formData.payment_mode,
-        reference_number: formData.reference_number || null,
-        notes: formData.notes || null,
-        created_by: profile?.id || null,
-      });
+        // Get profile ID
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('user_id', user?.id)
+          .single();
 
-      if (paymentError) throw paymentError;
+        // Insert payment
+        const { error: paymentError } = await supabase.from('invoice_payments').insert({
+          invoice_id: invoice.id,
+          payment_date: formData.payment_date,
+          amount,
+          payment_mode: formData.payment_mode,
+          reference_number: formData.reference_number || null,
+          notes: formData.notes || null,
+          created_by: profile?.id || null,
+        });
 
-      // Update invoice amounts and status
-      const newAmountPaid = invoice.amount_paid + amount;
-      const newBalanceDue = invoice.total_amount - newAmountPaid;
-      let newStatus = invoice.status;
+        if (paymentError) throw paymentError;
 
-      if (newBalanceDue <= 0) {
-        newStatus = 'paid';
-      } else if (newAmountPaid > 0) {
-        newStatus = 'partial';
+        // Update invoice amounts and status
+        const newAmountPaid = invoice.amount_paid + amount;
+        const newBalanceDue = invoice.total_amount - newAmountPaid;
+        let newStatus = invoice.status;
+
+        if (newBalanceDue <= 0) {
+          newStatus = 'paid';
+        } else if (newAmountPaid > 0) {
+          newStatus = 'partial';
+        }
+
+        const { error: updateError } = await supabase
+          .from('invoices')
+          .update({
+            amount_paid: newAmountPaid,
+            balance_due: newBalanceDue,
+            status: newStatus,
+          })
+          .eq('id', invoice.id);
+
+        if (updateError) throw updateError;
       }
-
-      const { error: updateError } = await supabase
-        .from('invoices')
-        .update({
-          amount_paid: newAmountPaid,
-          balance_due: newBalanceDue,
-          status: newStatus,
-        })
-        .eq('id', invoice.id);
-
-      if (updateError) throw updateError;
 
       toast.success('Payment recorded successfully');
       onOpenChange(false);

@@ -5,7 +5,8 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { supabase } from '@/integrations/supabase/client';
+import { USE_PYTHON_API, getCloudClient } from '@/lib/backend';
+import { apiClient } from '@/lib/api-client';
 import { Loader2, Edit, FileText, ArrowUpRight, ArrowDownLeft } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
@@ -34,16 +35,26 @@ export default function InvoiceDetailDialog({ invoice, open, onOpenChange, onEdi
   async function fetchDetails() {
     setLoading(true);
     
-    const [itemsResult, paymentsResult] = await Promise.all([
-      supabase.from('invoice_line_items').select('*').eq('invoice_id', invoice.id).order('created_at'),
-      supabase.from('invoice_payments').select('*').eq('invoice_id', invoice.id).order('payment_date', { ascending: false }),
-    ]);
+    if (USE_PYTHON_API) {
+      const [itemsRes, paymentsRes] = await Promise.all([
+        apiClient.get<InvoiceLineItem[]>(`/invoices/${invoice.id}/line-items`),
+        apiClient.get<InvoicePayment[]>(`/invoices/${invoice.id}/payments`),
+      ]);
+      setLineItems(itemsRes.data || []);
+      setPayments(paymentsRes.data || []);
+    } else {
+      const supabase = await getCloudClient();
+      const [itemsResult, paymentsResult] = await Promise.all([
+        supabase.from('invoice_line_items').select('*').eq('invoice_id', invoice.id).order('created_at'),
+        supabase.from('invoice_payments').select('*').eq('invoice_id', invoice.id).order('payment_date', { ascending: false }),
+      ]);
 
-    if (itemsResult.data) {
-      setLineItems(itemsResult.data as InvoiceLineItem[]);
-    }
-    if (paymentsResult.data) {
-      setPayments(paymentsResult.data as InvoicePayment[]);
+      if (itemsResult.data) {
+        setLineItems(itemsResult.data as InvoiceLineItem[]);
+      }
+      if (paymentsResult.data) {
+        setPayments(paymentsResult.data as InvoicePayment[]);
+      }
     }
     
     setLoading(false);
@@ -52,10 +63,15 @@ export default function InvoiceDetailDialog({ invoice, open, onOpenChange, onEdi
   async function updateStatus(newStatus: InvoiceStatus) {
     setUpdatingStatus(true);
     
-    const { error } = await supabase
-      .from('invoices')
-      .update({ status: newStatus })
-      .eq('id', invoice.id);
+    let error: any = null;
+    if (USE_PYTHON_API) {
+      const res = await apiClient.put(`/invoices/${invoice.id}`, { status: newStatus });
+      error = res.error;
+    } else {
+      const supabase = await getCloudClient();
+      const res = await supabase.from('invoices').update({ status: newStatus }).eq('id', invoice.id);
+      error = res.error;
+    }
 
     if (error) {
       toast.error('Failed to update status');

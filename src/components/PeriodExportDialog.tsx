@@ -4,7 +4,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { supabase } from '@/integrations/supabase/client';
+import { USE_PYTHON_API, getCloudClient } from '@/lib/backend';
+import { apiClient } from '@/lib/api-client';
 import { Loader2, Download } from 'lucide-react';
 import { toast } from 'sonner';
 import { exportPeriodTripSheet, mapTripToPeriodData } from '@/lib/periodTripSheetExport';
@@ -58,37 +59,61 @@ export default function PeriodExportDialog({ open, onOpenChange }: PeriodExportD
 
     try {
       const { start, end, label } = getDateRange();
+      let trips: any[] | null = null;
+      let expenses: any[] | null = null;
 
-      // Fetch all trips in the date range with bus and driver info
-      const { data: trips, error: tripError } = await supabase
-        .from('trips')
-        .select(`
-          *,
-          bus:buses(registration_number, bus_name),
-          driver:profiles!trips_driver_id_fkey(full_name),
-          route:routes(route_name, from_address, to_address)
-        `)
-        .gte('start_date', start.toISOString())
-        .lte('start_date', end.toISOString())
-        .order('start_date', { ascending: true });
+      if (USE_PYTHON_API) {
+        const [tripsRes, expRes] = await Promise.all([
+          apiClient.get<any[]>('/trips', {
+            start_date: start.toISOString(),
+            end_date: end.toISOString(),
+            limit: 5000,
+          }),
+          apiClient.get<any[]>('/expenses', { status: 'approved', limit: 5000 }),
+        ]);
+        trips = tripsRes.data;
+        expenses = expRes.data;
+      } else {
+        const supabase = await getCloudClient();
+        const [tripsRes, expRes] = await Promise.all([
+          supabase
+            .from('trips')
+            .select(`
+              *,
+              bus:buses(registration_number, bus_name),
+              driver:profiles!trips_driver_id_fkey(full_name),
+              route:routes(route_name, from_address, to_address)
+            `)
+            .gte('start_date', start.toISOString())
+            .lte('start_date', end.toISOString())
+            .order('start_date', { ascending: true }),
+          supabase
+            .from('expenses')
+            .select(`trip_id, amount, category:expense_categories(name)`)
+            .in('trip_id', []) // Will be replaced below
+            .eq('status', 'approved'),
+        ]);
 
-      if (tripError) throw tripError;
+        trips = tripsRes.data;
+        if (tripsRes.error) throw tripsRes.error;
+
+        if (trips && trips.length > 0) {
+          const tripIds = trips.map((t) => t.id);
+          const { data: expData, error: expError } = await supabase
+            .from('expenses')
+            .select(`trip_id, amount, category:expense_categories(name)`)
+            .in('trip_id', tripIds)
+            .eq('status', 'approved');
+          if (expError) throw expError;
+          expenses = expData;
+        }
+      }
 
       if (!trips || trips.length === 0) {
         toast.error('No trips found for the selected period');
         setLoading(false);
         return;
       }
-
-      // Fetch all expenses for these trips
-      const tripIds = trips.map((t) => t.id);
-      const { data: expenses, error: expError } = await supabase
-        .from('expenses')
-        .select(`trip_id, amount, category:expense_categories(name)`)
-        .in('trip_id', tripIds)
-        .eq('status', 'approved');
-
-      if (expError) throw expError;
 
       // Group expenses by trip
       const expensesByTrip: Record<string, { category_name: string; amount: number }[]> = {};
@@ -112,7 +137,6 @@ export default function PeriodExportDialog({ open, onOpenChange }: PeriodExportD
         tripsByBus[busNo].push(trip);
       });
 
-      // Map to export format - flatten the array since mapTripToPeriodData returns an array
       const busData = Object.entries(tripsByBus).map(([vehicleNo, busTrips]) => ({
         vehicleNo,
         trips: busTrips.flatMap((trip) =>
