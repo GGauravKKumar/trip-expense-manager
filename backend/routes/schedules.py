@@ -91,142 +91,6 @@ def schedule_to_dict(schedule: BusSchedule) -> dict:
     }
 
 
-@router.get("")
-async def list_schedules(
-    bus_id: Optional[str] = None,
-    is_active: Optional[bool] = None,
-    current_user: TokenData = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """List all schedules"""
-    query = db.query(BusSchedule).options(
-        joinedload(BusSchedule.bus),
-        joinedload(BusSchedule.route),
-        joinedload(BusSchedule.driver)
-    )
-    
-    if bus_id:
-        query = query.filter(BusSchedule.bus_id == uuid.UUID(bus_id))
-    if is_active is not None:
-        query = query.filter(BusSchedule.is_active == is_active)
-    
-    schedules = query.order_by(BusSchedule.departure_time).all()
-    
-    return [schedule_to_dict(s) for s in schedules]
-
-
-@router.get("/{schedule_id}")
-async def get_schedule(
-    schedule_id: str,
-    current_user: TokenData = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """Get a single schedule by ID"""
-    schedule = db.query(BusSchedule).options(
-        joinedload(BusSchedule.bus),
-        joinedload(BusSchedule.route),
-        joinedload(BusSchedule.driver)
-    ).filter(BusSchedule.id == uuid.UUID(schedule_id)).first()
-    
-    if not schedule:
-        raise HTTPException(status_code=404, detail="Schedule not found")
-    
-    return schedule_to_dict(schedule)
-
-
-@router.post("")
-async def create_schedule(
-    schedule_data: ScheduleCreate,
-    current_user: TokenData = Depends(require_admin),
-    db: Session = Depends(get_db)
-):
-    """Create a new schedule (admin only)"""
-    schedule = BusSchedule(
-        id=uuid.uuid4(),
-        bus_id=uuid.UUID(schedule_data.bus_id),
-        route_id=uuid.UUID(schedule_data.route_id),
-        driver_id=uuid.UUID(schedule_data.driver_id) if schedule_data.driver_id else None,
-        days_of_week=schedule_data.days_of_week,
-        departure_time=parse_time(schedule_data.departure_time),
-        arrival_time=parse_time(schedule_data.arrival_time),
-        is_two_way=schedule_data.is_two_way,
-        return_departure_time=parse_time(schedule_data.return_departure_time) if schedule_data.return_departure_time else None,
-        return_arrival_time=parse_time(schedule_data.return_arrival_time) if schedule_data.return_arrival_time else None,
-        is_active=schedule_data.is_active,
-        notes=schedule_data.notes,
-        is_overnight=schedule_data.is_overnight,
-        arrival_next_day=schedule_data.arrival_next_day,
-        turnaround_hours=schedule_data.turnaround_hours
-    )
-    
-    db.add(schedule)
-    db.commit()
-    db.refresh(schedule)
-    
-    # Reload with relationships
-    schedule = db.query(BusSchedule).options(
-        joinedload(BusSchedule.bus),
-        joinedload(BusSchedule.route),
-        joinedload(BusSchedule.driver)
-    ).filter(BusSchedule.id == schedule.id).first()
-    
-    return schedule_to_dict(schedule)
-
-
-@router.put("/{schedule_id}")
-async def update_schedule(
-    schedule_id: str,
-    schedule_data: ScheduleUpdate,
-    current_user: TokenData = Depends(require_admin),
-    db: Session = Depends(get_db)
-):
-    """Update a schedule (admin only)"""
-    schedule = db.query(BusSchedule).filter(BusSchedule.id == uuid.UUID(schedule_id)).first()
-    
-    if not schedule:
-        raise HTTPException(status_code=404, detail="Schedule not found")
-    
-    update_data = schedule_data.dict(exclude_unset=True)
-    
-    for key, value in update_data.items():
-        if key in ["bus_id", "route_id", "driver_id"] and value:
-            setattr(schedule, key, uuid.UUID(value))
-        elif key in ["departure_time", "arrival_time", "return_departure_time", "return_arrival_time"] and value:
-            setattr(schedule, key, parse_time(value))
-        else:
-            setattr(schedule, key, value)
-    
-    db.commit()
-    db.refresh(schedule)
-    
-    # Reload with relationships
-    schedule = db.query(BusSchedule).options(
-        joinedload(BusSchedule.bus),
-        joinedload(BusSchedule.route),
-        joinedload(BusSchedule.driver)
-    ).filter(BusSchedule.id == schedule.id).first()
-    
-    return schedule_to_dict(schedule)
-
-
-@router.delete("/{schedule_id}")
-async def delete_schedule(
-    schedule_id: str,
-    current_user: TokenData = Depends(require_admin),
-    db: Session = Depends(get_db)
-):
-    """Delete a schedule (admin only)"""
-    schedule = db.query(BusSchedule).filter(BusSchedule.id == uuid.UUID(schedule_id)).first()
-    
-    if not schedule:
-        raise HTTPException(status_code=404, detail="Schedule not found")
-    
-    db.delete(schedule)
-    db.commit()
-    
-    return {"message": "Schedule deleted successfully"}
-
-
 def generate_trip_number() -> str:
     now = datetime.utcnow()
     date_str = now.strftime("%y%m%d")
@@ -245,6 +109,30 @@ def is_overnight_journey(departure, arrival) -> bool:
     return parse_time_minutes(arrival) < parse_time_minutes(departure)
 
 
+@router.get("")
+async def list_schedules(
+    bus_id: Optional[str] = None,
+    is_active: Optional[bool] = None,
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """List all schedules"""
+    query = db.query(BusSchedule).options(
+        joinedload(BusSchedule.bus),
+        joinedload(BusSchedule.route),
+        joinedload(BusSchedule.driver)
+    )
+
+    if bus_id:
+        query = query.filter(BusSchedule.bus_id == uuid.UUID(bus_id))
+    if is_active is not None:
+        query = query.filter(BusSchedule.is_active == is_active)
+
+    schedules = query.order_by(BusSchedule.departure_time).all()
+
+    return [schedule_to_dict(s) for s in schedules]
+
+
 @router.post("/generate-trips")
 async def generate_trips(
     current_user: TokenData = Depends(require_admin),
@@ -256,7 +144,6 @@ async def generate_trips(
     today_name = day_names[today.weekday()]
     today_str = today.isoformat()
     yesterday = today - timedelta(days=1)
-    yesterday_str = yesterday.isoformat()
 
     schedules = db.query(BusSchedule).options(
         joinedload(BusSchedule.bus),
@@ -276,7 +163,6 @@ async def generate_trips(
 
     for schedule in schedules:
         try:
-            # Check if trip already exists
             existing = db.query(Trip).filter(
                 Trip.schedule_id == schedule.id,
                 Trip.trip_date == today
@@ -288,7 +174,6 @@ async def generate_trips(
             arr_time = schedule.arrival_time
             overnight = is_overnight_journey(dep_time, arr_time)
 
-            # Check bus availability
             active_bus_trip = db.query(Trip).filter(
                 Trip.bus_id == schedule.bus_id,
                 Trip.status == TripStatus.in_progress
@@ -297,7 +182,6 @@ async def generate_trips(
                 skipped.append(f"Bus {schedule.bus.registration_number if schedule.bus else ''} already on active trip")
                 continue
 
-            # Check driver availability
             if schedule.driver_id:
                 active_driver_trip = db.query(Trip).filter(
                     Trip.driver_id == schedule.driver_id,
@@ -307,14 +191,12 @@ async def generate_trips(
                     skipped.append(f"Driver {schedule.driver.full_name if schedule.driver else ''} already on active trip")
                     continue
 
-            # Find yesterday's trip for linking
             yesterday_trip = db.query(Trip).filter(
                 Trip.schedule_id == schedule.id,
                 Trip.trip_date == yesterday
             ).first()
 
             expected_arrival = (today + timedelta(days=1)) if overnight else today
-
             start_dt = datetime.combine(today, dep_time)
 
             bus_name = ""
@@ -351,13 +233,11 @@ async def generate_trips(
             db.add(trip)
             db.flush()
 
-            # Link yesterday's trip
             if yesterday_trip:
                 yesterday_trip.next_trip_id = trip.id
 
             trips_created += 1
 
-            # Notify driver
             if schedule.driver_id:
                 notification = Notification(
                     id=uuid.uuid4(),
@@ -382,3 +262,113 @@ async def generate_trips(
         "skipped": skipped if skipped else None,
         "errors": errors if errors else None,
     }
+
+
+@router.get("/{schedule_id}")
+async def get_schedule(
+    schedule_id: str,
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get a single schedule by ID"""
+    schedule = db.query(BusSchedule).options(
+        joinedload(BusSchedule.bus),
+        joinedload(BusSchedule.route),
+        joinedload(BusSchedule.driver)
+    ).filter(BusSchedule.id == uuid.UUID(schedule_id)).first()
+
+    if not schedule:
+        raise HTTPException(status_code=404, detail="Schedule not found")
+
+    return schedule_to_dict(schedule)
+
+
+@router.post("")
+async def create_schedule(
+    schedule_data: ScheduleCreate,
+    current_user: TokenData = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """Create a new schedule (admin only)"""
+    schedule = BusSchedule(
+        id=uuid.uuid4(),
+        bus_id=uuid.UUID(schedule_data.bus_id),
+        route_id=uuid.UUID(schedule_data.route_id),
+        driver_id=uuid.UUID(schedule_data.driver_id) if schedule_data.driver_id else None,
+        days_of_week=schedule_data.days_of_week,
+        departure_time=parse_time(schedule_data.departure_time),
+        arrival_time=parse_time(schedule_data.arrival_time),
+        is_two_way=schedule_data.is_two_way,
+        return_departure_time=parse_time(schedule_data.return_departure_time) if schedule_data.return_departure_time else None,
+        return_arrival_time=parse_time(schedule_data.return_arrival_time) if schedule_data.return_arrival_time else None,
+        is_active=schedule_data.is_active,
+        notes=schedule_data.notes,
+        is_overnight=schedule_data.is_overnight,
+        arrival_next_day=schedule_data.arrival_next_day,
+        turnaround_hours=schedule_data.turnaround_hours
+    )
+
+    db.add(schedule)
+    db.commit()
+    db.refresh(schedule)
+
+    schedule = db.query(BusSchedule).options(
+        joinedload(BusSchedule.bus),
+        joinedload(BusSchedule.route),
+        joinedload(BusSchedule.driver)
+    ).filter(BusSchedule.id == schedule.id).first()
+
+    return schedule_to_dict(schedule)
+
+
+@router.put("/{schedule_id}")
+async def update_schedule(
+    schedule_id: str,
+    schedule_data: ScheduleUpdate,
+    current_user: TokenData = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """Update a schedule (admin only)"""
+    schedule = db.query(BusSchedule).filter(BusSchedule.id == uuid.UUID(schedule_id)).first()
+
+    if not schedule:
+        raise HTTPException(status_code=404, detail="Schedule not found")
+
+    update_data = schedule_data.dict(exclude_unset=True)
+
+    for key, value in update_data.items():
+        if key in ["bus_id", "route_id", "driver_id"] and value:
+            setattr(schedule, key, uuid.UUID(value))
+        elif key in ["departure_time", "arrival_time", "return_departure_time", "return_arrival_time"] and value:
+            setattr(schedule, key, parse_time(value))
+        else:
+            setattr(schedule, key, value)
+
+    db.commit()
+    db.refresh(schedule)
+
+    schedule = db.query(BusSchedule).options(
+        joinedload(BusSchedule.bus),
+        joinedload(BusSchedule.route),
+        joinedload(BusSchedule.driver)
+    ).filter(BusSchedule.id == schedule.id).first()
+
+    return schedule_to_dict(schedule)
+
+
+@router.delete("/{schedule_id}")
+async def delete_schedule(
+    schedule_id: str,
+    current_user: TokenData = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """Delete a schedule (admin only)"""
+    schedule = db.query(BusSchedule).filter(BusSchedule.id == uuid.UUID(schedule_id)).first()
+
+    if not schedule:
+        raise HTTPException(status_code=404, detail="Schedule not found")
+
+    db.delete(schedule)
+    db.commit()
+
+    return {"message": "Schedule deleted successfully"}
