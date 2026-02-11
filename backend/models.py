@@ -281,6 +281,10 @@ class Trip(Base):
     return_revenue_agent = Column(Numeric, default=0)
     return_total_revenue = Column(Numeric, default=0)
     return_total_expense = Column(Numeric, default=0)
+    expected_arrival_date = Column(Date)
+    previous_trip_id = Column(UUID(as_uuid=True), ForeignKey("trips.id"))
+    next_trip_id = Column(UUID(as_uuid=True), ForeignKey("trips.id"))
+    cycle_position = Column(Integer)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
 

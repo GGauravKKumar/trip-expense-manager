@@ -380,21 +380,26 @@ export default function ScheduleManagement() {
     setGenerating(true);
     try {
       if (USE_PYTHON_API) {
-        toast.info('Trip generation is only available in Cloud mode');
-        setGenerating(false);
-        return;
-      }
-      
-      const supabase = await getCloudClient();
-      const { data, error } = await supabase.functions.invoke('generate-scheduled-trips');
-      if (error) throw error;
-      
-      if (data.tripsCreated > 0) {
-        toast.success(`Created ${data.tripsCreated} trips from ${data.schedulesProcessed} schedules`);
-      } else if (data.schedulesProcessed === 0) {
-        toast.info('No active schedules found for today');
+        const { data, error } = await apiClient.post<any>('/schedules/generate-trips', {});
+        if (error) throw error;
+        if (data?.tripsCreated > 0) {
+          toast.success(`Created ${data.tripsCreated} trips from ${data.schedulesProcessed} schedules`);
+        } else if (data?.schedulesProcessed === 0) {
+          toast.info('No active schedules found for today');
+        } else {
+          toast.info('All trips for today already exist');
+        }
       } else {
-        toast.info('All trips for today already exist');
+        const supabase = await getCloudClient();
+        const { data, error } = await supabase.functions.invoke('generate-scheduled-trips');
+        if (error) throw error;
+        if (data.tripsCreated > 0) {
+          toast.success(`Created ${data.tripsCreated} trips from ${data.schedulesProcessed} schedules`);
+        } else if (data.schedulesProcessed === 0) {
+          toast.info('No active schedules found for today');
+        } else {
+          toast.info('All trips for today already exist');
+        }
       }
     } catch (error) {
       console.error('Error generating trips:', error);
