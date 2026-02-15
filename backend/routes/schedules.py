@@ -139,20 +139,22 @@ async def generate_trips(
     db: Session = Depends(get_db)
 ):
     """Generate today's trips from active schedules"""
-    today = date.today()
-    day_names = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
-    today_name = day_names[today.weekday()]
-    today_str = today.isoformat()
-    yesterday = today - timedelta(days=1)
+    import traceback
+    try:
+        today = date.today()
+        day_names = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+        today_name = day_names[today.weekday()]
+        today_str = today.isoformat()
+        yesterday = today - timedelta(days=1)
 
-    schedules = db.query(BusSchedule).options(
-        joinedload(BusSchedule.bus),
-        joinedload(BusSchedule.route),
-        joinedload(BusSchedule.driver)
-    ).filter(
-        BusSchedule.is_active == True,
-        BusSchedule.days_of_week.contains([today_name])
-    ).all()
+        schedules = db.query(BusSchedule).options(
+            joinedload(BusSchedule.bus),
+            joinedload(BusSchedule.route),
+            joinedload(BusSchedule.driver)
+        ).filter(
+            BusSchedule.is_active == True,
+            BusSchedule.days_of_week.contains([today_name])
+        ).all()
 
     if not schedules:
         return {"success": True, "schedulesProcessed": 0, "tripsCreated": 0}
@@ -251,17 +253,22 @@ async def generate_trips(
         except Exception as e:
             errors.append(f"Schedule {schedule.id}: {str(e)}")
 
-    db.commit()
+        db.commit()
 
-    return {
-        "success": True,
-        "date": today_str,
-        "day": today_name,
-        "schedulesProcessed": len(schedules),
-        "tripsCreated": trips_created,
-        "skipped": skipped if skipped else None,
-        "errors": errors if errors else None,
-    }
+        return {
+            "success": True,
+            "date": today_str,
+            "day": today_name,
+            "schedulesProcessed": len(schedules),
+            "tripsCreated": trips_created,
+            "skipped": skipped if skipped else None,
+            "errors": errors if errors else None,
+        }
+    except Exception as e:
+        db.rollback()
+        error_detail = traceback.format_exc()
+        print(f"[generate-trips] ERROR: {error_detail}")
+        raise HTTPException(status_code=500, detail=f"Trip generation failed: {str(e)}\n{error_detail}")
 
 
 @router.get("/{schedule_id}")
