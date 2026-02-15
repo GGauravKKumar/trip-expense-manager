@@ -153,7 +153,7 @@ async def generate_trips(
             joinedload(BusSchedule.driver)
         ).filter(
             BusSchedule.is_active == True,
-            BusSchedule.days_of_week.contains([today_name])
+            BusSchedule.days_of_week.op('@>')([today_name])
         ).all()
 
         if not schedules:
