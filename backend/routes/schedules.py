@@ -7,6 +7,8 @@ from typing import Optional, List
 from datetime import time, date, datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import cast, Text, ARRAY
+from sqlalchemy.dialects.postgresql import array
 from pydantic import BaseModel
 
 from database import get_db
@@ -153,7 +155,7 @@ async def generate_trips(
             joinedload(BusSchedule.driver)
         ).filter(
             BusSchedule.is_active == True,
-            BusSchedule.days_of_week.op('@>')([today_name])
+            BusSchedule.days_of_week.op('@>')(cast(array([today_name]), ARRAY(Text)))
         ).all()
 
         if not schedules:
