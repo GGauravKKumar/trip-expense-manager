@@ -242,20 +242,28 @@ async def generate_trips(
 
                 trips_created += 1
 
-                if schedule.driver_id:
-                    notification = Notification(
-                        id=uuid.uuid4(),
-                        user_id=schedule.driver_id,
-                        type="trip_reminder",
-                        title="Scheduled Trip Today",
-                        message=f"You have a scheduled trip: {schedule.route.route_name if schedule.route else 'Route'} departing at {dep_time}",
-                    )
-                    db.add(notification)
+                # Commit trip first so it's not lost if notification fails
+                db.commit()
+
+                # Send notification using driver's auth user_id (not profile id)
+                if schedule.driver and schedule.driver.user_id:
+                    try:
+                        notification = Notification(
+                            id=uuid.uuid4(),
+                            user_id=schedule.driver.user_id,
+                            type="trip_reminder",
+                            title="Scheduled Trip Today",
+                            message=f"You have a scheduled trip: {schedule.route.route_name if schedule.route else 'Route'} departing at {dep_time}",
+                        )
+                        db.add(notification)
+                        db.commit()
+                    except Exception as notif_err:
+                        db.rollback()
+                        errors.append(f"Notification for schedule {schedule.id}: {str(notif_err)}")
 
             except Exception as e:
+                db.rollback()
                 errors.append(f"Schedule {schedule.id}: {str(e)}")
-
-        db.commit()
 
         return {
             "success": True,
