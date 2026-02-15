@@ -156,102 +156,102 @@ async def generate_trips(
             BusSchedule.days_of_week.contains([today_name])
         ).all()
 
-    if not schedules:
-        return {"success": True, "schedulesProcessed": 0, "tripsCreated": 0}
+        if not schedules:
+            return {"success": True, "schedulesProcessed": 0, "tripsCreated": 0}
 
-    trips_created = 0
-    skipped = []
-    errors = []
+        trips_created = 0
+        skipped = []
+        errors = []
 
-    for schedule in schedules:
-        try:
-            existing = db.query(Trip).filter(
-                Trip.schedule_id == schedule.id,
-                Trip.trip_date == today
-            ).first()
-            if existing:
-                continue
-
-            dep_time = schedule.departure_time
-            arr_time = schedule.arrival_time
-            overnight = is_overnight_journey(dep_time, arr_time)
-
-            active_bus_trip = db.query(Trip).filter(
-                Trip.bus_id == schedule.bus_id,
-                Trip.status == TripStatus.in_progress
-            ).first()
-            if active_bus_trip:
-                skipped.append(f"Bus {schedule.bus.registration_number if schedule.bus else ''} already on active trip")
-                continue
-
-            if schedule.driver_id:
-                active_driver_trip = db.query(Trip).filter(
-                    Trip.driver_id == schedule.driver_id,
-                    Trip.status == TripStatus.in_progress
+        for schedule in schedules:
+            try:
+                existing = db.query(Trip).filter(
+                    Trip.schedule_id == schedule.id,
+                    Trip.trip_date == today
                 ).first()
-                if active_driver_trip:
-                    skipped.append(f"Driver {schedule.driver.full_name if schedule.driver else ''} already on active trip")
+                if existing:
                     continue
 
-            yesterday_trip = db.query(Trip).filter(
-                Trip.schedule_id == schedule.id,
-                Trip.trip_date == yesterday
-            ).first()
+                dep_time = schedule.departure_time
+                arr_time = schedule.arrival_time
+                overnight = is_overnight_journey(dep_time, arr_time)
 
-            expected_arrival = (today + timedelta(days=1)) if overnight else today
-            start_dt = datetime.combine(today, dep_time)
+                active_bus_trip = db.query(Trip).filter(
+                    Trip.bus_id == schedule.bus_id,
+                    Trip.status == TripStatus.in_progress
+                ).first()
+                if active_bus_trip:
+                    skipped.append(f"Bus {schedule.bus.registration_number if schedule.bus else ''} already on active trip")
+                    continue
 
-            bus_name = ""
-            if schedule.bus:
-                bus_name = schedule.bus.bus_name or schedule.bus.registration_number or ""
-            driver_name = schedule.driver.full_name if schedule.driver else ""
+                if schedule.driver_id:
+                    active_driver_trip = db.query(Trip).filter(
+                        Trip.driver_id == schedule.driver_id,
+                        Trip.status == TripStatus.in_progress
+                    ).first()
+                    if active_driver_trip:
+                        skipped.append(f"Driver {schedule.driver.full_name if schedule.driver else ''} already on active trip")
+                        continue
 
-            cycle_pos = (yesterday_trip.cycle_position or 1) + 1 if yesterday_trip and hasattr(yesterday_trip, 'cycle_position') and yesterday_trip.cycle_position else 1
+                yesterday_trip = db.query(Trip).filter(
+                    Trip.schedule_id == schedule.id,
+                    Trip.trip_date == yesterday
+                ).first()
 
-            trip = Trip(
-                id=uuid.uuid4(),
-                trip_number=generate_trip_number(),
-                bus_id=schedule.bus_id,
-                driver_id=schedule.driver_id,
-                route_id=schedule.route_id,
-                schedule_id=schedule.id,
-                trip_date=today,
-                departure_time=dep_time,
-                arrival_time=arr_time,
-                start_date=start_dt,
-                status=TripStatus.scheduled,
-                trip_type="two_way" if schedule.is_two_way else "one_way",
-                bus_name_snapshot=bus_name,
-                driver_name_snapshot=driver_name,
-                expected_arrival_date=expected_arrival,
-                previous_trip_id=yesterday_trip.id if yesterday_trip else None,
-                cycle_position=cycle_pos,
-            )
+                expected_arrival = (today + timedelta(days=1)) if overnight else today
+                start_dt = datetime.combine(today, dep_time)
 
-            if schedule.is_two_way and schedule.return_departure_time:
-                trip.return_departure_time = schedule.return_departure_time
-                trip.return_arrival_time = schedule.return_arrival_time
+                bus_name = ""
+                if schedule.bus:
+                    bus_name = schedule.bus.bus_name or schedule.bus.registration_number or ""
+                driver_name = schedule.driver.full_name if schedule.driver else ""
 
-            db.add(trip)
-            db.flush()
+                cycle_pos = (yesterday_trip.cycle_position or 1) + 1 if yesterday_trip and hasattr(yesterday_trip, 'cycle_position') and yesterday_trip.cycle_position else 1
 
-            if yesterday_trip:
-                yesterday_trip.next_trip_id = trip.id
-
-            trips_created += 1
-
-            if schedule.driver_id:
-                notification = Notification(
+                trip = Trip(
                     id=uuid.uuid4(),
-                    user_id=schedule.driver_id,
-                    type="trip_reminder",
-                    title="Scheduled Trip Today",
-                    message=f"You have a scheduled trip: {schedule.route.route_name if schedule.route else 'Route'} departing at {dep_time}",
+                    trip_number=generate_trip_number(),
+                    bus_id=schedule.bus_id,
+                    driver_id=schedule.driver_id,
+                    route_id=schedule.route_id,
+                    schedule_id=schedule.id,
+                    trip_date=today,
+                    departure_time=dep_time,
+                    arrival_time=arr_time,
+                    start_date=start_dt,
+                    status=TripStatus.scheduled,
+                    trip_type="two_way" if schedule.is_two_way else "one_way",
+                    bus_name_snapshot=bus_name,
+                    driver_name_snapshot=driver_name,
+                    expected_arrival_date=expected_arrival,
+                    previous_trip_id=yesterday_trip.id if yesterday_trip else None,
+                    cycle_position=cycle_pos,
                 )
-                db.add(notification)
 
-        except Exception as e:
-            errors.append(f"Schedule {schedule.id}: {str(e)}")
+                if schedule.is_two_way and schedule.return_departure_time:
+                    trip.return_departure_time = schedule.return_departure_time
+                    trip.return_arrival_time = schedule.return_arrival_time
+
+                db.add(trip)
+                db.flush()
+
+                if yesterday_trip:
+                    yesterday_trip.next_trip_id = trip.id
+
+                trips_created += 1
+
+                if schedule.driver_id:
+                    notification = Notification(
+                        id=uuid.uuid4(),
+                        user_id=schedule.driver_id,
+                        type="trip_reminder",
+                        title="Scheduled Trip Today",
+                        message=f"You have a scheduled trip: {schedule.route.route_name if schedule.route else 'Route'} departing at {dep_time}",
+                    )
+                    db.add(notification)
+
+            except Exception as e:
+                errors.append(f"Schedule {schedule.id}: {str(e)}")
 
         db.commit()
 
