@@ -10,6 +10,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Bus, Loader2, ShieldAlert, Eye, EyeOff } from 'lucide-react';
 import { toast } from 'sonner';
 import { loginSchema, validateForm } from '@/lib/validationSchemas';
+import { useCompanyLogo } from '@/hooks/useCompanyLogo';
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -20,6 +21,7 @@ export default function Login() {
   const { signIn } = useAuth();
   const navigate = useNavigate();
   const { recordFailedAttempt, isLockedOut, getRemainingLockoutTime, resetAttempts } = useLoginAttemptTracking();
+  const logoUrl = useCompanyLogo();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -60,9 +62,7 @@ export default function Login() {
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
           <div className="flex justify-center mb-4">
-            <div className="p-3 bg-primary/10 rounded-full">
-              <Bus className="h-8 w-8 text-primary" />
-            </div>
+            <img src={logoUrl} alt="BusManager" className="h-16 w-16 rounded-full object-cover" />
           </div>
           <CardTitle className="text-2xl">BusManager</CardTitle>
           <CardDescription>Sign in to manage your fleet</CardDescription>

@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Bus, Loader2, Eye, EyeOff, CheckCircle2, XCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { signupSchema, validateForm } from '@/lib/validationSchemas';
+import { useCompanyLogo } from '@/hooks/useCompanyLogo';
 
 export default function Signup() {
   const [email, setEmail] = useState('');
@@ -18,6 +19,7 @@ export default function Signup() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const { signUp } = useAuth();
   const navigate = useNavigate();
+  const logoUrl = useCompanyLogo();
 
   // Password strength checks
   const passwordChecks = {
@@ -54,9 +56,7 @@ export default function Signup() {
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
           <div className="flex justify-center mb-4">
-            <div className="p-3 bg-primary/10 rounded-full">
-              <Bus className="h-8 w-8 text-primary" />
-            </div>
+            <img src={logoUrl} alt="BusManager" className="h-16 w-16 rounded-full object-cover" />
           </div>
           <CardTitle className="text-2xl">Create Account</CardTitle>
           <CardDescription>Join BusManager to get started</CardDescription>
