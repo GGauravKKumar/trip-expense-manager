@@ -2,9 +2,10 @@ import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Bus, MapPin, Receipt, FileText, Users, Shield, BarChart3, ArrowRight } from 'lucide-react';
-import logoImg from '@/assets/logo.jpg';
+import { useCompanyLogo } from '@/hooks/useCompanyLogo';
 
 const Index = () => {
+  const logoUrl = useCompanyLogo();
   const features = [
     {
       icon: Bus,
@@ -45,7 +46,7 @@ const Index = () => {
         <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-background to-primary/5" />
         <nav className="relative container mx-auto px-4 py-6 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <img src={logoImg} alt="BusManager logo" className="h-10 w-10 rounded-lg object-cover" />
+            <img src={logoUrl} alt="BusManager logo" className="h-10 w-10 rounded-lg object-cover" />
             <span className="text-xl font-bold">BusManager</span>
           </div>
           <div className="flex items-center gap-4">
@@ -146,7 +147,7 @@ const Index = () => {
         <div className="container mx-auto px-4">
           <div className="flex flex-col md:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-2">
-              <img src={logoImg} alt="BusManager logo" className="h-9 w-9 rounded-lg object-cover" />
+              <img src={logoUrl} alt="BusManager logo" className="h-9 w-9 rounded-lg object-cover" />
               <span className="font-semibold">BusManager</span>
             </div>
             <p className="text-sm text-muted-foreground">

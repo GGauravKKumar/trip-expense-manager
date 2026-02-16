@@ -25,7 +25,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useState } from 'react';
-import logoImg from '@/assets/logo.jpg';
+import { useCompanyLogo } from '@/hooks/useCompanyLogo';
 
 const adminLinks = [
   { href: '/admin', label: 'Dashboard', icon: LayoutDashboard },
@@ -60,6 +60,7 @@ export default function Sidebar() {
   const { userRole, signOut, user } = useAuth();
   const location = useLocation();
   const [isMobileOpen, setIsMobileOpen] = useState(false);
+  const logoUrl = useCompanyLogo();
 
   const links = userRole === 'admin' ? adminLinks : userRole === 'repair_org' ? repairOrgLinks : driverLinks;
 
@@ -98,7 +99,7 @@ export default function Sidebar() {
           {/* Header */}
           <div className="p-6 border-b border-sidebar-border">
             <div className="flex items-center gap-3">
-             <img src={logoImg} alt="BusManager logo" className="h-10 w-10 rounded-lg object-cover" />
+             <img src={logoUrl} alt="BusManager logo" className="h-10 w-10 rounded-lg object-cover" />
               <div>
                 <h2 className="font-semibold text-sidebar-foreground">BusManager</h2>
                 <p className="text-xs text-sidebar-foreground/60 capitalize">{userRole} Portal</p>
