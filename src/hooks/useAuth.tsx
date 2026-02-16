@@ -63,7 +63,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return unsubscribe;
     }
 
-    // Lovable Cloud mode - lazy load Supabase
+    // Cloud mode - lazy load auth client
     let subscription: { unsubscribe: () => void } | null = null;
 
     const initSupabase = async () => {

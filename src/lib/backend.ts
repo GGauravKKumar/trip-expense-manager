@@ -7,7 +7,7 @@ export const USE_PYTHON_API = !!VITE_API_URL;
 let cloudClient: any | null = null;
 
 /**
- * Lazy-load the Lovable Cloud DB client.
+ * Lazy-load the cloud DB client.
  * IMPORTANT: Do not import the client at module scope in files that must work in offline mode.
  */
 export async function getCloudClient() {
