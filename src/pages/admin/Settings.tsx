@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { USE_PYTHON_API, getCloudClient } from '@/lib/backend';
 import { apiClient } from '@/lib/api-client';
-import { Loader2, Save, Settings as SettingsIcon, Building2, Fuel, Bell } from 'lucide-react';
+import { Loader2, Save, Settings as SettingsIcon, Building2, Fuel, Bell, ImageIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import ChangePasswordCard from '@/components/ChangePasswordCard';
 
@@ -19,6 +19,7 @@ interface SettingsData {
   company_phone: string;
   company_email: string;
   company_gst: string;
+  company_logo_url: string;
 }
 
 const defaultSettings: SettingsData = {
@@ -29,6 +30,7 @@ const defaultSettings: SettingsData = {
   company_phone: '',
   company_email: '',
   company_gst: '',
+  company_logo_url: '',
 };
 
 export default function Settings() {
@@ -60,6 +62,7 @@ export default function Settings() {
           company_phone: settingsMap.company_phone || defaultSettings.company_phone,
           company_email: settingsMap.company_email || defaultSettings.company_email,
           company_gst: settingsMap.company_gst || defaultSettings.company_gst,
+          company_logo_url: settingsMap.company_logo_url || defaultSettings.company_logo_url,
         });
       }
     } else {
@@ -84,6 +87,7 @@ export default function Settings() {
           company_phone: settingsMap.company_phone || defaultSettings.company_phone,
           company_email: settingsMap.company_email || defaultSettings.company_email,
           company_gst: settingsMap.company_gst || defaultSettings.company_gst,
+          company_logo_url: settingsMap.company_logo_url || defaultSettings.company_logo_url,
         });
       }
     }
@@ -215,6 +219,49 @@ export default function Settings() {
                 <p className="text-xs text-muted-foreground">
                   Show alerts for documents and licenses expiring within this many days
                 </p>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Company Logo */}
+          <Card className="lg:col-span-2">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <ImageIcon className="h-5 w-5" />
+                Company Logo
+              </CardTitle>
+              <CardDescription>
+                Paste an image URL to use as the company logo across the app (sidebar, landing page)
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-start gap-6">
+                <div className="shrink-0">
+                  {settings.company_logo_url ? (
+                    <img
+                      src={settings.company_logo_url}
+                      alt="Company logo preview"
+                      className="h-20 w-20 rounded-lg object-cover border"
+                      onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                    />
+                  ) : (
+                    <div className="h-20 w-20 rounded-lg bg-muted flex items-center justify-center border">
+                      <ImageIcon className="h-8 w-8 text-muted-foreground" />
+                    </div>
+                  )}
+                </div>
+                <div className="flex-1 space-y-2">
+                  <Label htmlFor="company_logo_url">Logo Image URL</Label>
+                  <Input
+                    id="company_logo_url"
+                    value={settings.company_logo_url}
+                    onChange={(e) => handleChange('company_logo_url', e.target.value)}
+                    placeholder="https://example.com/your-logo.png"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Paste a direct link to your logo image. It will appear in the sidebar and on the landing page.
+                  </p>
+                </div>
               </div>
             </CardContent>
           </Card>
