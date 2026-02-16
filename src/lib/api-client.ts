@@ -209,7 +209,7 @@ class ApiClient {
 
   // File upload
   async uploadFile(
-    type: 'expense' | 'repair',
+    type: 'expense' | 'repair' | 'logo',
     file: File
   ): Promise<{ data: { url: string } | null; error: Error | null }> {
     try {

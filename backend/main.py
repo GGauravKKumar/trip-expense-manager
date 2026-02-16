@@ -83,6 +83,7 @@ UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", BASE_DIR / "uploads")).resolve()
 # Create required subdirectories
 (UPLOAD_DIR / "expenses").mkdir(parents=True, exist_ok=True)
 (UPLOAD_DIR / "repairs").mkdir(parents=True, exist_ok=True)
+(UPLOAD_DIR / "logos").mkdir(parents=True, exist_ok=True)
 
 # Mount static files for uploads
 app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")

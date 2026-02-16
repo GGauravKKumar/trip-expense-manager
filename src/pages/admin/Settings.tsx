@@ -147,15 +147,8 @@ export default function Settings() {
     setUploadingLogo(true);
     try {
       if (USE_PYTHON_API) {
-        const formData = new FormData();
-        formData.append('file', file);
-        const res = await fetch('/api/upload/logo', {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${localStorage.getItem('auth_token') || ''}` },
-          body: formData,
-        });
-        if (!res.ok) throw new Error('Upload failed');
-        const data = await res.json();
+        const { data, error } = await apiClient.uploadFile('logo' as any, file);
+        if (error || !data) throw new Error(error?.message || 'Upload failed');
         handleChange('company_logo_url', data.url);
         toast.success('Logo uploaded! Click Save to apply.');
       } else {
