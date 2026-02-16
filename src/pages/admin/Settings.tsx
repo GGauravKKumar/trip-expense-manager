@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { USE_PYTHON_API, getCloudClient } from '@/lib/backend';
 import { apiClient } from '@/lib/api-client';
-import { Loader2, Save, Settings as SettingsIcon, Building2, Fuel, Bell, ImageIcon } from 'lucide-react';
+import { Loader2, Save, Settings as SettingsIcon, Building2, Fuel, Bell, ImageIcon, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 import ChangePasswordCard from '@/components/ChangePasswordCard';
 
@@ -36,6 +36,7 @@ const defaultSettings: SettingsData = {
 export default function Settings() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
   const [settings, setSettings] = useState<SettingsData>(defaultSettings);
 
   useEffect(() => {
@@ -132,6 +133,60 @@ export default function Settings() {
 
   function handleChange(key: keyof SettingsData, value: string) {
     setSettings((prev) => ({ ...prev, [key]: value }));
+  }
+
+  async function handleLogoUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error('File too large. Maximum 2MB.');
+      return;
+    }
+
+    setUploadingLogo(true);
+    try {
+      if (USE_PYTHON_API) {
+        const formData = new FormData();
+        formData.append('file', file);
+        const res = await fetch('/api/upload/logo', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${localStorage.getItem('auth_token') || ''}` },
+          body: formData,
+        });
+        if (!res.ok) throw new Error('Upload failed');
+        const data = await res.json();
+        handleChange('company_logo_url', data.url);
+        toast.success('Logo uploaded! Click Save to apply.');
+      } else {
+        // Cloud mode: upload to Supabase storage
+        const supabase = await getCloudClient();
+        const ext = file.name.split('.').pop() || 'png';
+        const filePath = `company-logo.${ext}`;
+
+        // Remove old logo if any
+        await supabase.storage.from('expense-documents').remove([`logos/${filePath}`]);
+
+        const { error } = await supabase.storage
+          .from('expense-documents')
+          .upload(`logos/${filePath}`, file, { upsert: true });
+
+        if (error) throw error;
+
+        const { data: urlData } = supabase.storage
+          .from('expense-documents')
+          .getPublicUrl(`logos/${filePath}`);
+
+        handleChange('company_logo_url', urlData.publicUrl);
+        toast.success('Logo uploaded! Click Save to apply.');
+      }
+    } catch (err: any) {
+      toast.error(err?.message || 'Upload failed');
+    } finally {
+      setUploadingLogo(false);
+      // Reset input so same file can be re-selected
+      e.target.value = '';
+    }
   }
 
   if (loading) {
@@ -231,7 +286,7 @@ export default function Settings() {
                 Company Logo
               </CardTitle>
               <CardDescription>
-                Paste an image URL to use as the company logo across the app (sidebar, landing page)
+                Upload an image or paste a URL to use as the company logo across the app
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -250,17 +305,47 @@ export default function Settings() {
                     </div>
                   )}
                 </div>
-                <div className="flex-1 space-y-2">
-                  <Label htmlFor="company_logo_url">Logo Image URL</Label>
-                  <Input
-                    id="company_logo_url"
-                    value={settings.company_logo_url}
-                    onChange={(e) => handleChange('company_logo_url', e.target.value)}
-                    placeholder="https://example.com/your-logo.png"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Paste a direct link to your logo image. It will appear in the sidebar and on the landing page.
-                  </p>
+                <div className="flex-1 space-y-3">
+                  {/* Upload button */}
+                  <div className="space-y-2">
+                    <Label>Upload Logo</Label>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="relative"
+                        disabled={uploadingLogo}
+                        onClick={() => document.getElementById('logo-upload-input')?.click()}
+                      >
+                        {uploadingLogo ? (
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                          <Upload className="h-4 w-4 mr-2" />
+                        )}
+                        {uploadingLogo ? 'Uploading...' : 'Choose File'}
+                      </Button>
+                      <input
+                        id="logo-upload-input"
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp,image/svg+xml"
+                        className="hidden"
+                        onChange={handleLogoUpload}
+                      />
+                      <p className="text-xs text-muted-foreground">Max 2MB · JPG, PNG, WebP, SVG</p>
+                    </div>
+                  </div>
+                  <Separator />
+                  {/* URL input */}
+                  <div className="space-y-2">
+                    <Label htmlFor="company_logo_url">Or paste URL</Label>
+                    <Input
+                      id="company_logo_url"
+                      value={settings.company_logo_url}
+                      onChange={(e) => handleChange('company_logo_url', e.target.value)}
+                      placeholder="https://example.com/your-logo.png"
+                    />
+                  </div>
                 </div>
               </div>
             </CardContent>
