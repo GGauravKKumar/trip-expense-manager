@@ -50,6 +50,26 @@ class RepairUpdate(BaseModel):
     status: Optional[str] = None
 
 
+class OrgCreate(BaseModel):
+    org_code: str
+    org_name: str
+    contact_person: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    address: Optional[str] = None
+    is_active: bool = True
+
+
+class OrgUpdate(BaseModel):
+    org_code: Optional[str] = None
+    org_name: Optional[str] = None
+    contact_person: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    address: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
 def repair_to_dict(repair: RepairRecord) -> dict:
     total_cost = float(repair.parts_cost or 0) + float(repair.labor_cost or 0)
     gst_amount = 0
@@ -161,6 +181,102 @@ async def list_repair_organizations(
         "address": o.address,
         "is_active": o.is_active
     } for o in orgs]
+
+
+@router.get("/organizations/{org_id}")
+async def get_organization(
+    org_id: str,
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get a single repair organization"""
+    org = db.query(RepairOrganization).filter(RepairOrganization.id == uuid.UUID(org_id)).first()
+    if not org:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    return {
+        "id": str(org.id),
+        "org_code": org.org_code,
+        "org_name": org.org_name,
+        "contact_person": org.contact_person,
+        "phone": org.phone,
+        "email": org.email,
+        "address": org.address,
+        "is_active": org.is_active
+    }
+
+
+@router.post("/organizations")
+async def create_organization(
+    org_data: OrgCreate,
+    current_user: TokenData = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """Create a new repair organization (admin only)"""
+    org = RepairOrganization(
+        id=uuid.uuid4(),
+        org_code=org_data.org_code,
+        org_name=org_data.org_name,
+        contact_person=org_data.contact_person,
+        phone=org_data.phone,
+        email=org_data.email,
+        address=org_data.address,
+        is_active=org_data.is_active
+    )
+    db.add(org)
+    db.commit()
+    db.refresh(org)
+    return {
+        "id": str(org.id),
+        "org_code": org.org_code,
+        "org_name": org.org_name,
+        "contact_person": org.contact_person,
+        "phone": org.phone,
+        "email": org.email,
+        "address": org.address,
+        "is_active": org.is_active
+    }
+
+
+@router.put("/organizations/{org_id}")
+async def update_organization(
+    org_id: str,
+    org_data: OrgUpdate,
+    current_user: TokenData = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """Update a repair organization (admin only)"""
+    org = db.query(RepairOrganization).filter(RepairOrganization.id == uuid.UUID(org_id)).first()
+    if not org:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    for key, value in org_data.dict(exclude_unset=True).items():
+        setattr(org, key, value)
+    db.commit()
+    db.refresh(org)
+    return {
+        "id": str(org.id),
+        "org_code": org.org_code,
+        "org_name": org.org_name,
+        "contact_person": org.contact_person,
+        "phone": org.phone,
+        "email": org.email,
+        "address": org.address,
+        "is_active": org.is_active
+    }
+
+
+@router.delete("/organizations/{org_id}")
+async def delete_organization(
+    org_id: str,
+    current_user: TokenData = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """Delete a repair organization (admin only)"""
+    org = db.query(RepairOrganization).filter(RepairOrganization.id == uuid.UUID(org_id)).first()
+    if not org:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    db.delete(org)
+    db.commit()
+    return {"message": "Organization deleted successfully"}
 
 
 @router.get("/{repair_id}")
